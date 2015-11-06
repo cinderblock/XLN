@@ -1,0 +1,22 @@
+{
+  "name": "xln",
+  "version": "0.0.1",
+  "description": "Remote control library for XLN series DC power supplies",
+  "main": "XLN.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/cinderblock/XLN.git"
+  },
+  "keywords": [
+    "XLN"
+  ],
+  "author": "Cameron Tacklind <cameron@tacklind.com>",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/cinderblock/XLN/issues"
+  },
+  "homepage": "https://github.com/cinderblock/XLN#readme"
+}
