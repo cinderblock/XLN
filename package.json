@@ -18,5 +18,11 @@
   "bugs": {
     "url": "https://github.com/cinderblock/XLN/issues"
   },
-  "homepage": "https://github.com/cinderblock/XLN#readme"
+  "homepage": "https://github.com/cinderblock/XLN#readme",
+  "devDependencies": {
+    "babel-preset-es2015": "^6.1.2",
+    "gulp": "^3.9.0",
+    "gulp-babel": "^6.1.0",
+    "gulp-json-editor": "^2.2.1"
+  }
 }
