@@ -48,6 +48,18 @@ export class tcpXLN {
     this.sock.setNoDelay();
   }
 
+  on(evt, cb) {
+    if (evt == 'data') return;
+
+    return this.sock.on(evt, cb);
+  }
+
+  once(evt, cb) {
+    if (evt == 'data') return;
+
+    return this.sock.once(evt, cb);
+  }
+
   send(str, callback) {
     if (callback)
      this.sock.once('data', data => callback(data.toString()));
