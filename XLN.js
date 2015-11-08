@@ -40,11 +40,11 @@ export class tcpXLN {
   constructor(options, callback) {
 
     this.host = options.host;
-    this.reconnect();
+    this.reconnect(callback);
   }
 
-  reconnect() {
-    this.sock = net.connect({host: this.host, port: XLN_TCP_PORT});
+  reconnect(callback) {
+    this.sock = net.connect({host: this.host, port: XLN_TCP_PORT}, callback);
     this.sock.setNoDelay();
   }
 
