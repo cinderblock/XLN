@@ -45,6 +45,7 @@ export class tcpXLN {
 
   reconnect() {
     this.sock = net.connect({host: this.host, port: XLN_TCP_PORT});
+    this.sock.setNoDelay();
   }
 
   send(str, callback) {
