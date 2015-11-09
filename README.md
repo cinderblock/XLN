@@ -30,7 +30,7 @@ var conn = new tcpXLN({host: 'hostname or IP'}, () => {
           setTimeout(() => {
             conn.getMeasuredCurrent(current => {
               console.log(current);
-              console.log((parseInt(current) > 0) ? 'Load detected' : 'No load');
+              console.log((parseFloat(current) > 0) ? 'Load detected' : 'No load');
 
               // Do more stuff...
 
