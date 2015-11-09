@@ -11,7 +11,15 @@
     "url": "git+https://github.com/cinderblock/XLN.git"
   },
   "keywords": [
-    "XLN"
+    "5025",
+    "Adjustable Power Supply",
+    "Adjustable DC",
+    "Adjustable DC Power Supply",
+    "DC Power Supply",
+    "Power Supply",
+    "SCPI",
+    "XLN",
+    "XLN6024"
   ],
   "author": "Cameron Tacklind <cameron@tacklind.com>",
   "license": "ISC",
