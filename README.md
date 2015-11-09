@@ -33,6 +33,9 @@ var conn = new tcpXLN({host: 'hostname or IP'}, () => {
               console.log((parseInt(current) > 0) ? 'Load detected' : 'No load');
 
               // Do more stuff...
+
+              // Close the connection
+              conn.end();
             });
           }, 400);
         });
