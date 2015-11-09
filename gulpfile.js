@@ -25,8 +25,4 @@ gulp.task('package.json', () => {
 
 gulp.task('dist', ['package.json', 'babel']);
 
-gulp.task('publish', ['dist'], done => {
-  spawn('npm', ['publish'], {cwd: npmDistDir, stdio: 'inherit'}).on('close', done);
-});
-
 gulp.task('default', ['dist']);
