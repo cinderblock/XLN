@@ -1,6 +1,5 @@
 const gulp = require('gulp');
 const babel = require('gulp-babel');
-const spawn = require('child_process').spawn;
 const jeditor = require('gulp-json-editor');
 
 const npmDistDir = 'dist';
