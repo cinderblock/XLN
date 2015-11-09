@@ -12,6 +12,7 @@ npm install --save xln
 
 ```
 import {tcpXLN} from 'xln';
+
 var conn = new tcpXLN({host: 'hostname or IP'}, () => {
   // Connected
   conn.getIDN(idn => {
