@@ -4,7 +4,8 @@
   "description": "Remote control library for XLN series DC power supplies",
   "main": "dist/XLN.js",
   "scripts": {
-    "prepublish": "gulp dist"
+    "prepublish": "gulp dist",
+    "postpublish": "git push --tags"
   },
   "repository": {
     "type": "git",
