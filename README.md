@@ -7,7 +7,7 @@ SPCI interface for XLN series Programmable DC Power Supplies
 ## Usage
 
 ```
-npm install --save xln
+npm install xln --save
 ```
 
 ```
