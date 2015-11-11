@@ -66,7 +66,7 @@ export class tcpXLN {
 
   send(str, callback) {
     if (callback)
-     this.sock.once('data', data => callback(data.toString()));
+     this.sock.once('data', data => callback(data.toString().replace(/\0/g, '').trim()));
 
     return this.sock.write(str + '\n');
   }
