@@ -5,7 +5,7 @@
   "main": "dist/XLN.js",
   "scripts": {
     "prepublish": "gulp dist",
-    "postpublish": "git push --tags"
+    "postpublish": "git push && git push --tags"
   },
   "repository": {
     "type": "git",
