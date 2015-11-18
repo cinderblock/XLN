@@ -15,6 +15,8 @@ import {tcpXLN} from 'xln';
 
 var conn = new tcpXLN({host: 'hostname or IP'}, () => {
   // Connected
+
+  // Read the device's model number, serial number, firmware version, etc.
   conn.getIDN(idn => {
     console.log('Device info: ' + idn);
 
@@ -25,11 +27,15 @@ var conn = new tcpXLN({host: 'hostname or IP'}, () => {
     conn.setSourceVoltage(12, () => {
       // 1A current limit
       conn.setSourceCurrent(1, () => {
+        // Enable the output
         conn.setOutput(true, () => {
           // Delay just a little bit before checking the current
           setTimeout(() => {
             conn.getMeasuredCurrent(current => {
               console.log(current);
+              // values are returned as strings
+
+              // Current might look like this right now: '0.000'
               console.log((parseFloat(current) > 0) ? 'Load detected' : 'No load');
 
               // Do more stuff...
@@ -46,6 +52,7 @@ var conn = new tcpXLN({host: 'hostname or IP'}, () => {
 
 conn.on('error', err => {
   console.log('Connection error');
+  // Error as reported by nodejs Socket
   console.log(err);
 }
 ```
