@@ -2,7 +2,7 @@
 
 SPCI interface for XLN series Programmable DC Power Supplies
 
-*This is still a work in progress*
+_This is still a work in progress_
 
 ## Usage
 

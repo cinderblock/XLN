@@ -1,0 +1,6 @@
+dist/
+coverage/
+package-lock.json
+
+# Correspondence from other agents/repos — leave their formatting alone.
+plans/consumer-requests-*.md

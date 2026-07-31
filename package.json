@@ -1,12 +1,44 @@
 {
   "name": "xln",
-  "version": "0.6.4",
-  "description": "Remote control library for XLN series DC power supplies",
-  "main": "dist/XLN.js",
+  "version": "1.0.0-alpha.1",
+  "description": "Remote control library for B&K Precision XLN series programmable DC power supplies (SCPI over TCP)",
+  "type": "module",
+  "exports": {
+    ".": {
+      "import": {
+        "types": "./dist/index.d.mts",
+        "default": "./dist/index.mjs"
+      },
+      "require": {
+        "types": "./dist/index.d.cts",
+        "default": "./dist/index.cjs"
+      }
+    },
+    "./package.json": "./package.json"
+  },
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.mjs",
+  "types": "./dist/index.d.cts",
+  "files": [
+    "dist"
+  ],
+  "engines": {
+    "node": ">=20.19.0"
+  },
   "scripts": {
-    "postversion": "npm publish",
-    "prepublish": "gulp dist",
-    "postpublish": "git push origin master --tags"
+    "build": "tsdown",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "check": "npm run format:check && npm run lint && npm run typecheck && npm run test",
+    "probe": "node --experimental-strip-types scripts/probe.ts",
+    "smoke": "node --experimental-strip-types scripts/smoke.ts",
+    "prepack": "npm run build"
   },
   "repository": {
     "type": "git",
@@ -14,14 +46,20 @@
   },
   "keywords": [
     "5025",
-    "Adjustable Power Supply",
-    "Adjustable DC",
-    "Adjustable DC Power Supply",
+    "B&K Precision",
+    "BK Precision",
     "DC Power Supply",
     "Power Supply",
+    "Programmable Power Supply",
     "SCPI",
     "XLN",
-    "XLN6024"
+    "XLN3640",
+    "XLN6024",
+    "XLN8018",
+    "XLN10014",
+    "XLN15010",
+    "XLN30052",
+    "XLN60026"
   ],
   "author": "Cameron Tacklind <cameron@tacklind.com>",
   "license": "ISC",
@@ -30,8 +68,18 @@
   },
   "homepage": "https://github.com/cinderblock/XLN#readme",
   "devDependencies": {
-    "babel-preset-es2015": "^6.1.2",
-    "gulp": "^3.9.0",
-    "gulp-babel": "^6.1.0"
-  }
+    "@arethetypeswrong/core": "^0.18.5",
+    "@eslint/js": "^10.0.1",
+    "@types/node": "^26.1.2",
+    "@vitest/coverage-v8": "^4.1.10",
+    "eslint": "^10.8.0",
+    "eslint-config-prettier": "^10.1.8",
+    "prettier": "^3.9.6",
+    "publint": "^0.3.22",
+    "tsdown": "^0.22.14",
+    "typescript": "^5.9.3",
+    "typescript-eslint": "^8.65.0",
+    "vitest": "^4.1.10"
+  },
+  "sideEffects": false
 }
