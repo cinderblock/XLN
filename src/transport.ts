@@ -36,6 +36,16 @@ export const XLN_TCP_PORT = 5025;
 /** Guards against unbounded memory growth if the device never terminates. */
 const MAX_BUFFER_BYTES = 64 * 1024;
 
+/** Tuning for {@link ScpiSocketOptions.autoReconnect}. */
+export interface ReconnectOptions {
+  /** Delay before the first retry, in milliseconds. Defaults to 500. */
+  minDelay?: number;
+  /** Ceiling for the exponential backoff, in milliseconds. Defaults to 30000. */
+  maxDelay?: number;
+  /** Give up after this many consecutive failures. Defaults to Infinity. */
+  maxAttempts?: number;
+}
+
 export interface ScpiSocketOptions {
   /** Hostname or IP address of the supply. */
   host: string;
@@ -50,6 +60,26 @@ export interface ScpiSocketOptions {
   timeout?: number;
   /** How long to wait for the TCP connection itself. Defaults to 5000 ms. */
   connectTimeout?: number;
+  /**
+   * Reconnect automatically after an unexpected disconnect, with exponential
+   * backoff. Off by default.
+   *
+   * Commands issued while disconnected reject immediately rather than being
+   * buffered — the device may have power-cycled, and replaying setpoints into
+   * a supply whose state you can no longer vouch for is not safe to do
+   * implicitly. Listen for `'connected'` and re-apply what you need.
+   */
+  autoReconnect?: boolean | ReconnectOptions;
+  /** Abort the initial connection attempt and tear down the socket. */
+  signal?: AbortSignal;
+}
+
+/** Per-command overrides. */
+export interface CommandOptions {
+  /** Cancel this command. Aborting mid-query resynchronizes the stream. */
+  signal?: AbortSignal;
+  /** Override the connection's default response timeout, in milliseconds. */
+  timeout?: number;
 }
 
 interface Pending {
@@ -68,7 +98,7 @@ export interface ScpiChannel {
   /** Send a command that produces no response. */
   write(command: string): Promise<void>;
   /** Send a query and resolve with the device's reply. */
-  query(command: string): Promise<string>;
+  query(command: string, options?: CommandOptions): Promise<string>;
 }
 
 interface ScpiSocketEvents {
@@ -82,7 +112,11 @@ interface ScpiSocketEvents {
   unsolicited: [line: string];
   /** The socket failed outside the scope of any individual command. */
   error: [error: Error];
-  /** The connection closed, for any reason. */
+  /** A connection was established — on first connect and after each retry. */
+  connected: [];
+  /** The connection dropped unexpectedly. Emitted before any retry. */
+  disconnected: [error: Error];
+  /** The connection closed, for any reason, including a deliberate close(). */
   close: [];
 }
 
@@ -91,6 +125,10 @@ interface ScpiSocketEvents {
  *
  * Most users want {@link XLN} instead; this is exported for anyone who needs
  * to send raw commands the typed API does not cover.
+ *
+ * Note there is no `'data'` event: raw bytes are consumed by the framing
+ * layer. Subscribing to one is a type error rather than silently doing
+ * nothing, which is what 0.6.x did.
  */
 export class ScpiSocket extends EventEmitter<ScpiSocketEvents> {
   readonly host: string;
@@ -104,7 +142,12 @@ export class ScpiSocket extends EventEmitter<ScpiSocketEvents> {
   private pendingTimer: NodeJS.Timeout | undefined;
   /** Tail of the command queue; every command chains onto this. */
   private tail: Promise<unknown> = Promise.resolve();
-  private closed = false;
+  /** Set by close(); suppresses auto-reconnect. */
+  private disposed = false;
+  private reconnectTimer: NodeJS.Timeout | undefined;
+  private reconnectAttempts = 0;
+  private readonly reconnect: Required<ReconnectOptions> | undefined;
+  private readonly connectSignal: AbortSignal | undefined;
 
   constructor(options: ScpiSocketOptions) {
     super();
@@ -112,11 +155,23 @@ export class ScpiSocket extends EventEmitter<ScpiSocketEvents> {
     this.port = options.port ?? XLN_TCP_PORT;
     this.timeout = options.timeout ?? 2000;
     this.connectTimeout = options.connectTimeout ?? 5000;
+    this.connectSignal = options.signal;
+
+    const reconnect = options.autoReconnect;
+    this.reconnect =
+      reconnect === undefined || reconnect === false
+        ? undefined
+        : {
+            minDelay: 500,
+            maxDelay: 30_000,
+            maxAttempts: Number.POSITIVE_INFINITY,
+            ...(reconnect === true ? {} : reconnect),
+          };
   }
 
   /** True while the socket is open and usable. */
   get connected(): boolean {
-    return this.socket !== undefined && !this.closed;
+    return this.socket !== undefined;
   }
 
   /** Open the connection. Rejects if it cannot be established. */
@@ -124,55 +179,11 @@ export class ScpiSocket extends EventEmitter<ScpiSocketEvents> {
     if (this.socket) {
       throw new XLNConnectionError('Already connected');
     }
-
-    const socket = new Socket();
-    socket.setNoDelay(true);
-
-    await new Promise<void>((resolve, reject) => {
-      const timer = setTimeout(() => {
-        socket.destroy();
-        reject(
-          new XLNConnectionError(
-            `Timed out after ${this.connectTimeout} ms connecting to ` +
-              `${this.host}:${this.port}`,
-          ),
-        );
-      }, this.connectTimeout);
-
-      socket.once('error', (error: Error) => {
-        clearTimeout(timer);
-        socket.destroy();
-        reject(
-          new XLNConnectionError(
-            `Failed to connect to ${this.host}:${this.port}: ${error.message}`,
-            { cause: error },
-          ),
-        );
-      });
-
-      socket.connect({ host: this.host, port: this.port }, () => {
-        clearTimeout(timer);
-        socket.removeAllListeners('error');
-        resolve();
-      });
-    });
-
-    // Responses are ASCII, but the legacy `STATUS?` command is documented to
-    // return "three bytes" of unknown encoding. latin1 maps every byte to a
-    // distinct code point, so nothing is mangled on the way through.
-    socket.setEncoding('latin1');
-    socket.on('data', (chunk: string) => {
-      this.onData(chunk);
-    });
-    socket.on('error', (error: Error) => {
-      this.fail(new XLNConnectionError(error.message, { cause: error }));
-    });
-    socket.on('close', () => {
-      this.fail(new XLNConnectionError('Connection closed by remote host'));
-    });
-
-    this.socket = socket;
-    this.closed = false;
+    if (this.disposed) {
+      throw new XLNConnectionError('This socket has been closed');
+    }
+    await this.open(this.connectSignal);
+    this.emit('connected');
   }
 
   /**
@@ -180,16 +191,19 @@ export class ScpiSocket extends EventEmitter<ScpiSocketEvents> {
    *
    * Resolves once the bytes have been handed to the OS — the device sends
    * nothing back to confirm, and this firmware has no `*OPC?`. Use
-   * `XLN`'s `autoCheckErrors` option, or query `SYS:ERR?` yourself, if you
-   * need to know whether the command was accepted.
+   * `XLN`'s `autoCheckErrors` option, or query `SYSTEM:ERROR?` yourself, if
+   * you need to know whether the command was accepted.
    */
-  write(command: string): Promise<void> {
-    return this.transaction((channel) => channel.write(command));
+  write(command: string, options?: CommandOptions): Promise<void> {
+    return this.transaction((channel) => channel.write(command), options);
   }
 
   /** Send a query and resolve with the single line the device replies with. */
-  query(command: string): Promise<string> {
-    return this.transaction((channel) => channel.query(command));
+  query(command: string, options?: CommandOptions): Promise<string> {
+    return this.transaction(
+      (channel) => channel.query(command, options),
+      options,
+    );
   }
 
   /**
@@ -206,19 +220,33 @@ export class ScpiSocket extends EventEmitter<ScpiSocketEvents> {
    * });
    * ```
    */
-  transaction<T>(fn: (channel: ScpiChannel) => Promise<T>): Promise<T> {
+  transaction<T>(
+    fn: (channel: ScpiChannel) => Promise<T>,
+    options?: CommandOptions,
+  ): Promise<T> {
     return this.enqueue(async () => {
+      // Checked after the queue wait, not before it: a signal aborted while
+      // this command sat in the queue must still take effect.
+      throwIfAborted(options?.signal);
       this.assertUsable();
       return fn(this.channel);
     });
   }
 
-  /** Close the connection. Safe to call more than once. */
+  /** Close the connection and cancel any pending reconnect. */
   async close(): Promise<void> {
+    this.disposed = true;
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = undefined;
+    }
+
     const socket = this.socket;
-    if (!socket) return;
+    if (!socket) {
+      this.settleReject(new XLNConnectionError('Connection closed'));
+      return;
+    }
     this.socket = undefined;
-    this.closed = true;
 
     await new Promise<void>((resolve) => {
       socket.removeAllListeners('close');
@@ -247,6 +275,72 @@ export class ScpiSocket extends EventEmitter<ScpiSocketEvents> {
 
   // --- internals ---------------------------------------------------------
 
+  private async open(signal: AbortSignal | undefined): Promise<void> {
+    throwIfAborted(signal);
+
+    const socket = new Socket();
+    socket.setNoDelay(true);
+
+    await new Promise<void>((resolve, reject) => {
+      const settle = (error?: Error): void => {
+        clearTimeout(timer);
+        signal?.removeEventListener('abort', onAbort);
+        socket.removeAllListeners('error');
+        if (error) {
+          socket.destroy();
+          reject(error);
+        } else {
+          resolve();
+        }
+      };
+
+      const timer = setTimeout(() => {
+        settle(
+          new XLNConnectionError(
+            `Timed out after ${this.connectTimeout} ms connecting to ` +
+              `${this.host}:${this.port}`,
+          ),
+        );
+      }, this.connectTimeout);
+
+      const onAbort = (): void => {
+        settle(new XLNConnectionError('Connection attempt aborted'));
+      };
+      signal?.addEventListener('abort', onAbort, { once: true });
+
+      socket.once('error', (error: Error) => {
+        settle(
+          new XLNConnectionError(
+            `Failed to connect to ${this.host}:${this.port}: ${error.message}`,
+            { cause: error },
+          ),
+        );
+      });
+
+      socket.connect({ host: this.host, port: this.port }, () => {
+        settle();
+      });
+    });
+
+    // Responses are ASCII, but the legacy `STATUS?` command is documented to
+    // return "three bytes" of unknown encoding. latin1 maps every byte to a
+    // distinct code point, so nothing is mangled on the way through.
+    socket.setEncoding('latin1');
+    socket.on('data', (chunk: string) => {
+      this.onData(chunk);
+    });
+    socket.on('error', (error: Error) => {
+      this.fail(new XLNConnectionError(error.message, { cause: error }));
+    });
+    socket.on('close', () => {
+      this.fail(new XLNConnectionError('Connection closed by remote host'));
+    });
+
+    this.rx = '';
+    this.socket = socket;
+    this.reconnectAttempts = 0;
+  }
+
   /**
    * Chain `fn` onto the command queue.
    *
@@ -260,8 +354,10 @@ export class ScpiSocket extends EventEmitter<ScpiSocketEvents> {
   }
 
   private assertUsable(): void {
-    if (!this.socket || this.closed) {
-      throw new XLNConnectionError('Not connected');
+    if (!this.socket) {
+      throw new XLNConnectionError(
+        this.disposed ? 'Connection closed' : 'Not connected',
+      );
     }
   }
 
@@ -271,10 +367,13 @@ export class ScpiSocket extends EventEmitter<ScpiSocketEvents> {
       this.assertUsable();
       await this.send(command);
     },
-    query: async (command: string): Promise<string> => {
+    query: async (
+      command: string,
+      options?: CommandOptions,
+    ): Promise<string> => {
       this.assertUsable();
       // Arm the receiver before writing so a fast reply cannot be missed.
-      const response = this.awaitLine(command);
+      const response = this.awaitLine(command, options);
       try {
         await this.send(command);
       } catch (error) {
@@ -306,12 +405,33 @@ export class ScpiSocket extends EventEmitter<ScpiSocketEvents> {
     });
   }
 
-  private awaitLine(command: string): Promise<string> {
+  private awaitLine(
+    command: string,
+    options?: CommandOptions,
+  ): Promise<string> {
+    const timeout = options?.timeout ?? this.timeout;
+    const signal = options?.signal;
+
     return new Promise<string>((resolve, reject) => {
-      this.pending = { command, resolve, reject };
+      const onAbort = (): void => {
+        this.settleReject(new XLNConnectionError(`Aborted: ${command}`));
+      };
+      signal?.addEventListener('abort', onAbort, { once: true });
+
+      this.pending = {
+        command,
+        resolve: (line) => {
+          signal?.removeEventListener('abort', onAbort);
+          resolve(line);
+        },
+        reject: (error) => {
+          signal?.removeEventListener('abort', onAbort);
+          reject(error);
+        },
+      };
       this.pendingTimer = setTimeout(() => {
-        this.settleReject(new XLNTimeoutError(command, this.timeout));
-      }, this.timeout);
+        this.settleReject(new XLNTimeoutError(command, timeout));
+      }, timeout);
     });
   }
 
@@ -376,17 +496,70 @@ export class ScpiSocket extends EventEmitter<ScpiSocketEvents> {
 
   /** Handle a connection-level failure: fail the in-flight command, if any. */
   private fail(error: Error): void {
+    if (!this.socket) return;
+    this.socket = undefined;
+
     const hadPending = this.pending !== undefined;
     this.settleReject(error);
-    if (this.closed) return;
-    this.closed = true;
-    this.socket = undefined;
+
+    if (this.disposed) return;
+
+    this.emit('disconnected', error);
     // Only surface as an 'error' event if nobody was waiting on a command —
     // otherwise the rejection above already reported it, and an unhandled
     // 'error' event would take the whole process down.
-    if (!hadPending && this.listenerCount('error') > 0) {
+    if (!hadPending && !this.reconnect && this.listenerCount('error') > 0) {
       this.emit('error', error);
     }
-    this.emit('close');
+
+    if (this.reconnect) {
+      this.scheduleReconnect();
+    } else {
+      this.emit('close');
+    }
+  }
+
+  private scheduleReconnect(): void {
+    const config = this.reconnect;
+    if (!config || this.disposed || this.reconnectTimer) return;
+
+    if (this.reconnectAttempts >= config.maxAttempts) {
+      if (this.listenerCount('error') > 0) {
+        this.emit(
+          'error',
+          new XLNConnectionError(
+            `Giving up after ${this.reconnectAttempts} reconnect attempts`,
+          ),
+        );
+      }
+      this.emit('close');
+      return;
+    }
+
+    const delay = Math.min(
+      config.maxDelay,
+      config.minDelay * 2 ** this.reconnectAttempts,
+    );
+    this.reconnectAttempts += 1;
+
+    this.reconnectTimer = setTimeout(() => {
+      this.reconnectTimer = undefined;
+      if (this.disposed) return;
+      this.open(this.connectSignal).then(
+        () => {
+          this.emit('connected');
+        },
+        () => {
+          this.scheduleReconnect();
+        },
+      );
+    }, delay);
+    this.reconnectTimer.unref();
+  }
+}
+
+function throwIfAborted(signal: AbortSignal | undefined): void {
+  if (signal?.aborted === true) {
+    throw new XLNConnectionError('Aborted');
   }
 }

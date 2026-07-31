@@ -26,6 +26,7 @@ import {
 import {
   ScpiSocket,
   XLN_TCP_PORT,
+  type CommandOptions,
   type ScpiChannel,
   type ScpiSocketOptions,
 } from './transport.js';
@@ -102,6 +103,16 @@ export class XLN {
     this.spec = spec;
     this.autoCheckErrors = options.autoCheckErrors ?? true;
     this.validateRanges = options.validateRanges ?? true;
+
+    if (this.autoCheckErrors) {
+      // Only fires on reconnects — the initial 'connected' is emitted before
+      // this instance exists. A supply that dropped the link may have
+      // power-cycled with errors already queued; clearing them keeps the next
+      // command from being blamed for a fault that predates it.
+      this.socket.on('connected', () => {
+        void this.socket.write('*CLS').catch(() => undefined);
+      });
+    }
   }
 
   /**
@@ -631,23 +642,23 @@ export class XLN {
    *
    * Still goes through the queue and the `autoCheckErrors` check.
    */
-  async command(command: string): Promise<void> {
+  async command(command: string, options?: CommandOptions): Promise<void> {
     if (!this.autoCheckErrors) {
-      await this.socket.write(command);
+      await this.socket.write(command, options);
       return;
     }
     await this.socket.transaction(async (channel: ScpiChannel) => {
       await channel.write(command);
-      const error = parseDeviceError(await channel.query(ERROR_QUERY));
+      const error = parseDeviceError(await channel.query(ERROR_QUERY, options));
       if (error) {
         throw new XLNDeviceError(error.code, error.description, command);
       }
-    });
+    }, options);
   }
 
   /** Send a raw query and return the device's reply verbatim. */
-  async query(command: string): Promise<string> {
-    return this.socket.query(command);
+  async query(command: string, options?: CommandOptions): Promise<string> {
+    return this.socket.query(command, options);
   }
 
   // --- internals ---------------------------------------------------------

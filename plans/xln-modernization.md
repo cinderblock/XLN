@@ -171,16 +171,60 @@ code throws. Costs a round trip; users who need throughput set it false.
 - [x] Decisions confirmed with Cameron (async rewrite / hardware available / full
       tooling / alpha to `next` tag)
 - [x] Write this plan
-- [ ] Scaffold toolchain — package.json, tsconfig, tsdown, eslint, prettier; delete
+- [x] Scaffold toolchain — package.json, tsconfig, tsdown, eslint, prettier; deleted
       gulpfile.js and .npmignore
-- [ ] Implement `transport.ts`
-- [ ] Implement `models.ts`, `parse.ts`, `errors.ts`, `xln.ts`
-- [ ] Mock device + vitest suite
-- [ ] `scripts/probe.ts` + `scripts/smoke.ts`
-- [ ] README rewrite + migration guide, CHANGELOG
-- [ ] GitHub Actions: test matrix + release with provenance
+- [x] Implement `transport.ts` — queue, framing, timeouts, transactions,
+      AbortSignal, opt-in auto-reconnect
+- [x] Implement `models.ts`, `parse.ts`, `errors.ts`, `xln.ts`
+- [x] Mock device + vitest suite — 93 tests, including ones that drive the built
+      `dist/` through both ESM and CommonJS
+- [x] `scripts/probe.ts` + `scripts/smoke.ts`, both exercised against the mock
+- [x] README rewrite + migration table, CHANGELOG
+- [x] GitHub Actions: test matrix + release with provenance
+- [x] Read and answer `consumer-requests-xln-control.md` (see
+      `plans/reply-to-xln-control.md`)
 - [ ] **Run probe against real hardware** and fold answers into tests
 - [ ] Publish `1.0.0-alpha.1` to `next`
+
+## Findings / gotchas discovered during implementation
+
+- **TypeScript 7.0.2 is `latest` but unusable here.** `typescript-eslint` 8.65 caps
+  its peer range at `<6.1.0`, so type-aware linting breaks on TS 7. Pinned to
+  TypeScript 5.9.3. Revisit when typescript-eslint ships TS 7 support — the emitted
+  output is identical either way.
+- **`*CLS` ordering was a real race.** Sending it _after_ `*IDN?` in `connect()`
+  meant the write could still be in flight when the caller issued their first
+  command, and would then wipe the error that command produced. Writes resolve when
+  bytes reach the OS, not when the device has acted. Fixed by ordering `*CLS` before
+  the `*IDN?` query, so the query's round trip proves it landed. Regression test in
+  `test/xln.test.ts`.
+- **`await using` is only native from Node 24.** Not Node 20 or 22. The tests use it
+  and CI runs down to 20.19, so `vitest.config.ts` sets `oxc: { target: 'node20' }`
+  to downlevel. Note vitest 4 uses **oxc, not esbuild** — setting `esbuild.target`
+  is silently ignored with a warning. The shipped `dist/` is unaffected (the only
+  `await using` occurrences in it are inside JSDoc comments; verified).
+- **Node's `--experimental-strip-types` does not remap `.js` → `.ts` in imports**, so
+  it cannot run `scripts/*.ts` against `src/`. Using `tsx` instead.
+- **tsdown emits `.mjs`/`.cjs`**, not `.js`. The exports map has to match; `publint`
+  and `attw` now run on every build and catch this.
+- Do not assert TCP segment boundaries in tests. Two `socket.write()` calls in the
+  same tick can land in one segment regardless of `setNoDelay`; that is the OS's
+  business. Assert the byte stream instead.
+
+## Verification performed
+
+- 93 tests green: framing (fragmented, NUL-padded, CR/LF/CRLF), queue serialization
+  under concurrency, timeouts and late-reply resync, abort, reconnect with backoff,
+  range validation, error checking, and both module formats of the built bundle.
+- `npm run probe` and `npm run smoke` (including `--allow-output`) both exercised
+  end to end against the mock device.
+- `bun link` verified from a scratch project outside the repo, driving a real socket
+  under both `node` and `bun`.
+- `publint` and `attw` clean; `npm pack` ships exactly `dist/`, README, LICENSE,
+  package.json.
+- **Not verified locally: the Node 20.19 and 22 CI legs.** Only Node 24 is installed
+  on this machine. CI is the proof; if the `await using` downlevel is wrong, those
+  legs fail with a syntax error in the test files.
 
 ## Open questions for the user
 
@@ -206,6 +250,10 @@ These are the items the manuals do not answer. All are ~20 minutes on the bench 
 
 **Which XLN model do you have?** It determines the limit table entry the smoke test
 range-checks against. `*IDN?` will tell us during the probe run.
+
+Also note the model must be a **`-GL`** variant to have Ethernet at all, and the
+front panel must be set to System Setting → Remote Control → Ethernet with a static
+IP before anything can connect.
 
 ## Things not to do
 

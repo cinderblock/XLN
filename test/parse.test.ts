@@ -119,10 +119,16 @@ describe('parseRegulationMode', () => {
     expect(parseRegulationMode(' CV ')).toBe('CV');
   });
 
-  it('points at the issue tracker for undocumented encodings', () => {
-    // The manual only says "(CV or CC)"; if a unit answers numerically we want
-    // a report rather than a wrong guess.
-    expect(() => parseRegulationMode('1')).toThrow(/issues/);
+  it('passes through an unexpected reply instead of throwing', () => {
+    // The manual only says "(CV or CC)" and never states the encoding. A
+    // monitoring loop must degrade rather than die on a value we did not
+    // anticipate, so the uppercased reply comes back as-is.
+    expect(parseRegulationMode('1')).toBe('1');
+    expect(parseRegulationMode('unreg')).toBe('UNREG');
+  });
+
+  it('still rejects an empty reply', () => {
+    expect(() => parseRegulationMode('   ')).toThrow(XLNProtocolError);
   });
 });
 

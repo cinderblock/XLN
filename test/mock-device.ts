@@ -83,6 +83,23 @@ export class MockDevice {
   }
 
   static async start(options: MockDeviceOptions = {}): Promise<MockDevice> {
+    return MockDevice.listen(0, options);
+  }
+
+  /**
+   * Start on a specific port, to simulate a device coming back after a drop.
+   */
+  static async startOn(
+    port: number,
+    options: MockDeviceOptions = {},
+  ): Promise<MockDevice> {
+    return MockDevice.listen(port, options);
+  }
+
+  private static async listen(
+    port: number,
+    options: MockDeviceOptions,
+  ): Promise<MockDevice> {
     const server = createServer();
     const device = new MockDevice(server, options);
 
@@ -104,7 +121,7 @@ export class MockDevice {
       socket.on('close', () => device.sockets.delete(socket));
     });
 
-    server.listen(0, '127.0.0.1');
+    server.listen(port, '127.0.0.1');
     await once(server, 'listening');
     return device;
   }

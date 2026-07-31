@@ -1,0 +1,76 @@
+# Changelog
+
+## 1.0.0-alpha.1
+
+Complete rewrite in TypeScript. The API is promise-based and breaking; see
+[Migrating from 0.6.x](README.md#migrating-from-06x).
+
+### Fixed
+
+- **Responses could be silently mismatched to the wrong request.** `send()`
+  armed a `once('data')` listener for every command, including set commands the
+  device never answers. The orphaned listener consumed the next query's reply,
+  shifting every subsequent reading by one for the rest of the session.
+  Replaced with a serialized command queue and a receive buffer that frames on
+  the terminator instead of trusting TCP `data` boundaries. Split and coalesced
+  replies are both handled.
+- **Setters resolved with `socket.write()`'s return value** — TCP backpressure
+  state, not device acknowledgement. They now resolve only after the device has
+  accepted the command (see `autoCheckErrors` below).
+- **A lost reply hung the caller forever.** All commands now have a timeout.
+- **`getOutputState()` did not report the output state.** It queried
+  `OUTPUT:STATE?`, which returns the CV/CC regulation mode. Split into
+  `getOutput()` (on/off) and `getRegulationMode()`.
+- **Slew rates were undocumented as V/s.** They are V/ms and A/ms.
+- **Commands were sent with a leading colon and 2013-era short forms.** The
+  Output subsystem short form changed from `OUT` to `OUTP` between manual
+  revisions, and `:OUT?` is documented in neither. All commands now use the
+  long form with no leading colon, which every revision documents identically.
+- **Commands were terminated with bare LF.** The manual specifies CRLF.
+- `new Buffer(96)`, removed in modern Node, is gone with the UDP class.
+
+### Removed
+
+- **`udpXLN`.** No B&K manual revision (2010, 2013, 2018) documents UDP,
+  port 9221, or any discovery protocol; 9221 is an Aim-TTi convention and TCP
+  even there. Its `parseUDPMessage` was an identity stub. There is no
+  vendor-supported discovery mechanism for these supplies.
+- `tcpXLN` — replaced by `XLN` / `connect()`.
+- The gulp + babel build.
+
+### Added
+
+- Full TypeScript types, dual ESM/CommonJS output, validated by `publint` and
+  `attw` on every build.
+- `autoCheckErrors` (default **on**): each write is followed by
+  `SYSTEM:ERROR?`, throwing `XLNDeviceError` on a non-zero code. This firmware
+  has no `*OPC?`, so it is the only way to know a setpoint was accepted.
+- Client-side range validation from a per-model limit table, keyed off `*IDN?`.
+  Covers all seven models including the non-zero minimums on the high-voltage
+  units.
+- Opt-in auto-reconnect with exponential backoff, plus `connected` /
+  `disconnected` events.
+- `AbortSignal` support on connect and on raw commands; per-command timeout
+  overrides.
+- `transaction()` for sequences that must not be interleaved.
+- Typed error hierarchy under `XLNError`.
+- `PROTECTION` subsystem including **over-power**, which 0.6.x omitted entirely.
+- `getStatus()`, decoding the legacy `STATUS?` bitfield — the only way to read
+  latched over-temperature and AC-low faults.
+- Front-panel key lock, LCD backlight, aux 5 V output, power-on state
+  configuration, and the `MEMORY` preset subsystem.
+- `[Symbol.asyncDispose]` for `await using`.
+- `npm run probe` and `npm run smoke` for testing against real hardware.
+
+### Notes
+
+- Requires Node 20.19 or newer.
+- Published under the `next` dist-tag. `0.6.4` remains `latest` until this has
+  been exercised on real hardware.
+- Several response encodings are undocumented in the B&K manuals and are parsed
+  defensively. `npm run probe` resolves them against a real unit; please open an
+  issue with its output.
+
+## 0.6.4 and earlier
+
+See the git history. Released November 2015.

@@ -21,6 +21,8 @@ export { XLN, connect, type XLNOptions, type PowerOnMode } from './xln.js';
 export {
   ScpiSocket,
   XLN_TCP_PORT,
+  type CommandOptions,
+  type ReconnectOptions,
   type ScpiChannel,
   type ScpiSocketOptions,
 } from './transport.js';

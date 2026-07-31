@@ -36,8 +36,8 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "check": "npm run format:check && npm run lint && npm run typecheck && npm run test",
-    "probe": "node --experimental-strip-types scripts/probe.ts",
-    "smoke": "node --experimental-strip-types scripts/smoke.ts",
+    "probe": "tsx scripts/probe.ts",
+    "smoke": "tsx scripts/smoke.ts",
     "prepack": "npm run build"
   },
   "repository": {
@@ -77,9 +77,13 @@
     "prettier": "^3.9.6",
     "publint": "^0.3.22",
     "tsdown": "^0.22.14",
+    "tsx": "^4.23.1",
     "typescript": "^5.9.3",
     "typescript-eslint": "^8.65.0",
     "vitest": "^4.1.10"
   },
-  "sideEffects": false
+  "sideEffects": false,
+  "allowScripts": {
+    "esbuild@0.28.1": true
+  }
 }

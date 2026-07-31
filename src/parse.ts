@@ -26,8 +26,16 @@ export interface DeviceErrorInfo {
   readonly description: string;
 }
 
-/** Which loop the supply is currently regulating on. */
-export type RegulationMode = 'CV' | 'CC';
+/**
+ * Which loop the supply is currently regulating on.
+ *
+ * Deliberately an *open* union. The manual only ever says "(CV or CC)" and
+ * never states the encoding, so an unrecognized reply is passed through
+ * (uppercased) rather than throwing — a monitoring loop should degrade, not
+ * die, on a value we failed to anticipate. Compare against `'CV'`/`'CC'` and
+ * keep an else-branch.
+ */
+export type RegulationMode = 'CV' | 'CC' | (string & Record<never, never>);
 
 /**
  * Error codes from the XLN manual's event table.
@@ -153,21 +161,22 @@ export function parseDeviceError(
   };
 }
 
-/** Parse an `OUTPUT:STATE?` response into the active regulation loop. */
+/**
+ * Parse an `OUTPUT:STATE?` response into the active regulation loop.
+ *
+ * Returns the uppercased reply unchanged if it is neither `CV` nor `CC`. Only
+ * an empty reply is an error. See {@link RegulationMode} for why this does not
+ * validate harder.
+ */
 export function parseRegulationMode(
   response: string,
   command = 'OUTPUT:STATE?',
 ): RegulationMode {
   const text = response.trim().toUpperCase();
-  if (text === 'CV' || text === 'CC') return text;
-  throw new XLNProtocolError(
-    'Expected regulation mode CV or CC. If your unit answers with a number ' +
-      'instead, please report the raw value at ' +
-      'https://github.com/cinderblock/XLN/issues — the manual does not ' +
-      'document this encoding',
-    response,
-    command,
-  );
+  if (text.length === 0) {
+    throw new XLNProtocolError('Expected a regulation mode', response, command);
+  }
+  return text;
 }
 
 /**
