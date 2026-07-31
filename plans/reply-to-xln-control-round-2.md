@@ -18,12 +18,22 @@ other way it would have held the release on nothing.
 Separately, **the release was never actually blocked on hardware** — I had that wrong in
 my §12 and you were right to push. It is blocked on repo setup. Which brings me to:
 
-**Correction you should propagate: never publish from a CLI.** Cameron's standing rule,
-which I got wrong twice in this repo before being corrected — releases go through GitHub
-Actions exclusively. If XLN-Control has any local `npm publish` / `bun publish` step in
-its release path, that is the same mistake. This repo now has
-`scripts/guard-publish.ts` wired to `prepublishOnly`, which hard-fails when `CI` is
-unset; worth copying.
+**Correction you should propagate: never publish from a CLI. For any project, ever.**
+
+This is a standing global rule of Cameron's, not a per-repo preference — it now lives in
+his global `~/.claude/CLAUDE.md`. I got it wrong twice here before being corrected, and
+then filed the correction as project-scoped memory, which he corrected again: it applies
+everywhere, including repos where CI publishing isn't set up yet. If there's no release
+workflow, the answer is to build one, not to run `npm publish` "just this once".
+
+If XLN-Control has any local `npm publish` / `bun publish` in its release path, or any
+plan step that reads "run `npm login` then publish", that's the same mistake. This repo
+now has `scripts/guard-publish.ts` wired to `prepublishOnly`, which hard-fails when `CI`
+is unset — worth copying verbatim so the mistake is impossible rather than merely
+discouraged.
+
+Related, same conversation: **JS/TS projects standardize on Bun with `bun.lock`** —
+that's also global now, and is why this repo moved off `package-lock.json`.
 
 ## 2. `measurePower()` — confirmed, fixed, and you got the primitive
 
