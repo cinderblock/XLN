@@ -8,8 +8,8 @@ export default defineConfig({
   sourcemap: true,
   target: 'node20.19',
   platform: 'node',
-  // Validate the published shape on every build: publint catches a broken
-  // exports map, attw catches type resolution that works in ESM but not CJS.
-  publint: true,
-  attw: true,
+  // publint/attw are deliberately NOT enabled here. They pack the package to
+  // inspect it, and `build` runs from `prepack` — so enabling them makes
+  // `npm pack` recurse into itself and fail. They live in the `check:package`
+  // script instead, which CI runs.
 });

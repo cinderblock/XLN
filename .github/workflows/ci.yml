@@ -57,5 +57,6 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run build
-      # Fail loudly if the tarball would ship something unexpected.
-      - run: npm pack --dry-run
+      # publint checks the exports map; attw checks that types resolve under
+      # every module mode, not just the one we happen to develop in.
+      - run: npm run check:package

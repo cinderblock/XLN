@@ -38,7 +38,8 @@
     "check": "npm run format:check && npm run lint && npm run typecheck && npm run test",
     "probe": "tsx scripts/probe.ts",
     "smoke": "tsx scripts/smoke.ts",
-    "prepack": "npm run build"
+    "check:package": "publint --strict && attw --pack .",
+    "prepublishOnly": "npm run build"
   },
   "repository": {
     "type": "git",
@@ -68,7 +69,7 @@
   },
   "homepage": "https://github.com/cinderblock/XLN#readme",
   "devDependencies": {
-    "@arethetypeswrong/core": "^0.18.5",
+    "@arethetypeswrong/cli": "^0.18.5",
     "@eslint/js": "^10.0.1",
     "@types/node": "^26.1.2",
     "@vitest/coverage-v8": "^4.1.10",
