@@ -1,13 +1,13 @@
 /**
  * End-to-end smoke test against a real XLN supply.
  *
- *   npm run smoke -- 192.168.1.50
+ *   bun run smoke 192.168.1.50
  *
  * By default this is **read-only**: it identifies the device, reads every
  * getter, and reports anything the library failed to parse. It will not touch
  * the output or any setpoint.
  *
- *   npm run smoke -- 192.168.1.50 --allow-output
+ *   bun run smoke 192.168.1.50 --allow-output
  *
  * adds an active test: it saves your current setpoints, drives a low, safe
  * setpoint, enables the output briefly, measures, then disables the output and
@@ -24,7 +24,7 @@ const port = positional[1] === undefined ? undefined : Number(positional[1]);
 const allowOutput = args.includes('--allow-output');
 
 if (!host || (port !== undefined && !Number.isInteger(port))) {
-  console.error('Usage: npm run smoke -- <host> [port] [--allow-output]');
+  console.error('Usage: bun run smoke <host> [port] [--allow-output]');
   process.exit(1);
 }
 

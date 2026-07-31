@@ -5,7 +5,7 @@
  * resolves them empirically and prints a report you can paste into an issue.
  * Every answer it produces should become a test fixture.
  *
- *   npm run probe -- 192.168.1.50
+ *   bun run probe 192.168.1.50
  *
  * SAFETY: this is strictly read-only. It never enables the output, never
  * changes a setpoint, and never writes to non-volatile memory. The only
@@ -24,8 +24,8 @@ const host = process.argv[2];
 const port = Number(process.argv[3] ?? XLN_TCP_PORT);
 
 if (!host) {
-  console.error('Usage: npm run probe -- <host> [port]');
-  console.error('Example: npm run probe -- 192.168.1.50');
+  console.error('Usage: bun run probe <host> [port]');
+  console.error('Example: bun run probe 192.168.1.50');
   process.exit(1);
 }
 
