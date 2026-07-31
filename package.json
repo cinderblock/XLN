@@ -50,7 +50,9 @@
     "probe": "tsx scripts/probe.ts",
     "smoke": "tsx scripts/smoke.ts",
     "check:package": "publint --strict && attw --pack .",
-    "prepublishOnly": "tsx scripts/guard-publish.ts && npm run build"
+    "prepublishOnly": "tsx scripts/guard-publish.ts && npm run build",
+    "discover": "tsx scripts/discover.ts",
+    "probe:udp": "tsx scripts/probe-udp.ts"
   },
   "repository": {
     "type": "git",
