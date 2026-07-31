@@ -39,7 +39,7 @@
     "probe": "tsx scripts/probe.ts",
     "smoke": "tsx scripts/smoke.ts",
     "check:package": "publint --strict && attw --pack .",
-    "prepublishOnly": "npm run build"
+    "prepublishOnly": "tsx scripts/guard-publish.ts && npm run build"
   },
   "repository": {
     "type": "git",

@@ -40,6 +40,30 @@ transport layer and a command set that matches the actual device manual.
 4. **Publish `1.0.0-alpha.1` to the `next` dist-tag** once green. Explicitly _not_
    `latest` — 0.6.4 stays as `latest` so `npm i xln` does not break the handful of
    existing users until the alpha has been exercised on hardware.
+5. **Releases go through GitHub Actions, exclusively. Never `npm publish` from a
+   CLI.** CI publishing gives provenance attestation, a reproducible build from a
+   clean checkout, and an auditable record tied to a commit; a local publish has
+   none of those and can ship a dirty tree or a stale `dist/`. It also keeps npm
+   credentials in repo secrets rather than on a workstation. Enforced by
+   `scripts/guard-publish.ts`, wired to `prepublishOnly`, which hard-fails when
+   `CI` is unset.
+
+## Release process
+
+1. Bump the version in `package.json` and commit.
+2. `git tag v<version> && git push origin master --tags`.
+3. `.github/workflows/release.yml` runs the full check suite, then
+   `npm publish --provenance`. It picks the dist-tag automatically: any
+   prerelease version (`1.0.0-alpha.1`) goes to `next`, a plain version goes to
+   `latest`. `workflow_dispatch` allows overriding the tag by hand.
+
+One-time repo setup still required:
+
+- A GitHub **environment named `npm`** (the release job declares
+  `environment: npm`; the job fails without it).
+- An **`NPM_TOKEN`** secret in that environment — an npm automation token with
+  publish rights on `xln`.
+- The workflow already requests `id-token: write`, which provenance needs.
 
 ## Protocol research findings
 
@@ -186,10 +210,10 @@ code throws. Costs a round trip; users who need throughput set it false.
 - [x] Packaging validated — publint + attw green across node10, node16 CJS,
       node16 ESM and bundler resolution; `npm publish --dry-run --tag next` clean
 - [ ] **Run probe against real hardware** and fold answers into tests
-- [ ] **Publish `1.0.0-alpha.1` to `next`** — BLOCKED: `npm whoami` returns 401 on
-      this machine. Needs `npm login`, then `npm publish --tag next`. Everything
-      else is verified. **Use `--tag next`, never `latest`** — 0.6.4 must remain
-      `latest` until the alpha has run on hardware.
+- [ ] **Release `1.0.0-alpha.1` to `next`** — via GitHub Actions only (see
+      "Release process" below). Needs the repo pushed, an `npm` GitHub
+      environment, and an `NPM_TOKEN` secret. **Must land on `next`, never
+      `latest`** — 0.6.4 stays `latest` until the alpha has run on hardware.
 
 ## Findings / gotchas discovered during implementation
 

@@ -287,6 +287,21 @@ run `npm run build` before `npm test` if you're changing packaging.
 Protocol decisions and their sources are documented in
 [`plans/xln-modernization.md`](plans/xln-modernization.md).
 
+### Releasing
+
+Releases go through GitHub Actions, never a local `npm publish` — that is what
+gets provenance attestation and a reproducible build from a clean checkout.
+Tag the commit and push:
+
+```bash
+git tag v1.2.3
+git push origin master --tags
+```
+
+Prerelease versions publish to the `next` dist-tag automatically; plain versions
+go to `latest`. `prepublishOnly` refuses to run outside CI, so an accidental
+local publish fails rather than shipping.
+
 ## License
 
 ISC © Cameron Tacklind
