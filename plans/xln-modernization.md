@@ -183,8 +183,13 @@ code throws. Costs a round trip; users who need throughput set it false.
 - [x] GitHub Actions: test matrix + release with provenance
 - [x] Read and answer `consumer-requests-xln-control.md` (see
       `plans/reply-to-xln-control.md`)
+- [x] Packaging validated — publint + attw green across node10, node16 CJS,
+      node16 ESM and bundler resolution; `npm publish --dry-run --tag next` clean
 - [ ] **Run probe against real hardware** and fold answers into tests
-- [ ] Publish `1.0.0-alpha.1` to `next`
+- [ ] **Publish `1.0.0-alpha.1` to `next`** — BLOCKED: `npm whoami` returns 401 on
+      this machine. Needs `npm login`, then `npm publish --tag next`. Everything
+      else is verified. **Use `--tag next`, never `latest`** — 0.6.4 must remain
+      `latest` until the alpha has run on hardware.
 
 ## Findings / gotchas discovered during implementation
 
