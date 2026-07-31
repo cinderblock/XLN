@@ -196,8 +196,19 @@ async function main(): Promise<void> {
   console.log('   Does the device accept two sessions on 5025 at once?');
   try {
     const second = await openSocket();
+    // The device may accept the TCP handshake and *then* reset, so the error
+    // arrives asynchronously rather than from connect(). Catch it on the
+    // socket, not just around the connect call.
+    let reset: string | undefined;
+    second.on('error', (error: Error) => {
+      reset = error.message;
+    });
+
     const probe = await ask(second, '*IDN?');
-    if (probe.bytes.length > 0) {
+    if (reset !== undefined) {
+      console.log(`   REJECTED — second session was reset: ${reset}`);
+      console.log('   Single-session confirmed. Do not open two connections.');
+    } else if (probe.bytes.length > 0) {
       console.log(
         `   ACCEPTED — second session answered ${printable(probe.raw)}`,
       );

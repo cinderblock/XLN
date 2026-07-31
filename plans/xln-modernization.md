@@ -243,6 +243,57 @@ The XLN-Control agent reviewed `1.0.0-alpha.1` (see
   runs the suite on Node across the 20.19/22/24 matrix, and the release job
   still publishes with npm because provenance is an npm feature.
 
+## HARDWARE PROBE RESULTS (2026-07-31, XLN6024 at 10.255.14.231)
+
+Real unit: `BK PRECISION,XLN6024,276G11128,1.20,0` — firmware 1.20.
+
+**Every one of the previously-UNVERIFIED questions is now answered.**
+
+| Question                | Answer                                                                                              | Impact                                                        |
+| ----------------------- | --------------------------------------------------------------------------------------------------- | ------------------------------------------------------------- |
+| Response terminator     | **bare `LF`**, never CRLF                                                                           | We send CRLF (per manual) and parse tolerantly — fine         |
+| NUL padding             | **Real.** One `�` _after_ the LF, on some replies but not all (`*IDN?` none, `SOURCE:VOLTAGE?` one) | Not fixed-width padding. Framing already strips it            |
+| `SYSTEM:ERROR?` format  | **bare `0`** — not `0,"No error"`                                                                   | `parseDeviceError` already accepts it                         |
+| Boolean encoding        | **`OFF`/`ON`** — not `0`/`1`                                                                        | `parseBoolean` already accepts it. **Mock default was wrong** |
+| `OUTPUT:STATE?`         | Returns **`OFF`** when output is off — _not_ CV/CC                                                  | See below. Would have thrown before the open-union change     |
+| `STATUS?`               | **6-char contiguous hex** (`000000`)                                                                | `parseStatus` already handles hex                             |
+| Leading colon           | **Accepted** (`:SOURCE:VOLTAGE?` works)                                                             | We don't send one; harmless either way                        |
+| `SOUR:VOLT?` short form | **Accepted**                                                                                        | —                                                             |
+| `OUTP?` short form      | **REJECTED (silence)**                                                                              | Confirms the long form `OUTPUT?` was the right call           |
+| `;` compound commands   | **REJECTED (silence)**                                                                              | Confirms never batching                                       |
+| `*OPC?`                 | **Does not exist (silence)**                                                                        | Confirms `SYSTEM:ERROR?` is the only write sync               |
+| `SOURCE:VOLTAGE? MAX`   | **Not supported (silence)**                                                                         | Confirms the per-model limit table is necessary               |
+| Second TCP session      | **Reset, then the device WEDGED**                                                                   | See the warning below                                         |
+| Slew rate               | `OUTPUT:SR:VOLTAGE?` = `3.0000` = the XLN6024 max in **V/ms**                                       | Confirms V/ms, not V/s                                        |
+
+### The open union on `RegulationMode` was load-bearing
+
+`OUTPUT:STATE?` returns **`OFF`** while the output is disabled — not `CV`, not `CC`.
+My original implementation threw `XLNProtocolError` on anything but CV/CC. The
+XLN-Control agent argued it should degrade instead; I changed it on their
+reasoning alone. **That change is the only reason `getRegulationMode()` does not
+throw against real hardware in its most common state** (output off). Add `'OFF'`
+to the documented union members.
+
+### DANGER: a second TCP connection can wedge the instrument
+
+Opening a second simultaneous connection to port 5025 caused the device to
+`ECONNRESET` the new session — and then **all TCP services died**. Ports 80, 5024
+and 5025 all stopped accepting connections while the unit still answered ICMP
+ping. It did not recover on its own after 2.5 minutes of polling.
+
+Contributing factor: the probe script crashed on the unhandled `ECONNRESET` and
+left its primary socket open, so the device may have been holding a stale session.
+Either way the conclusion is the same and it is stronger than "assume
+single-session":
+
+**Never open a second connection. Always close cleanly. A crashed client can
+leave the instrument unreachable until it is power-cycled.**
+
+This belongs in the README as a prominent warning, and it is worth considering
+whether the library should actively help — e.g. documenting `close()` in a
+`finally`, and the `await using` pattern.
+
 ## Findings / gotchas discovered during implementation
 
 - **TypeScript 7.0.2 is `latest` but unusable here.** `typescript-eslint` 8.65 caps
