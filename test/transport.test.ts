@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { createServer } from 'node:net';
 import { once } from 'node:events';
 import type { AddressInfo } from 'node:net';
-import { MockDevice, type MockDeviceOptions } from './mock-device.js';
+import { MockDevice, type MockDeviceOptions } from '../src/testing/index.js';
 import { ScpiSocket } from '../src/transport.js';
 import { XLNConnectionError, XLNTimeoutError } from '../src/errors.js';
 
@@ -226,5 +226,71 @@ describe('unsolicited data', () => {
     expect(unsolicited).toEqual(['SPURIOUS']);
     // The very next query still gets its own answer.
     await expect(socket.query('SOURCE:VOLTAGE?')).resolves.toBe('0.000');
+  });
+});
+
+describe('framing pathologies from real-world correlation bugs', () => {
+  it('splits two replies delivered in a single TCP segment', async () => {
+    // A handler that resolves on the `data` event would take "1.000\r\n2.000"
+    // as one value and be off by one forever after. The buffer must yield two
+    // distinct lines.
+    //
+    // Note this cannot be provoked through MockDevice: because the transport
+    // is strictly one-in-flight, request 2 is not sent until reply 1 arrives,
+    // so a well-behaved device has nothing to coalesce. That is the design
+    // working. Driving it needs a server that volunteers both at once.
+    const server = createServer((connection) => {
+      connection.setEncoding('latin1');
+      connection.once('data', () => {
+        // Both replies, one write, one segment.
+        connection.write('1.000\r\n2.000\r\n');
+      });
+    });
+    server.listen(0, '127.0.0.1');
+    await once(server, 'listening');
+    const { port } = server.address() as AddressInfo;
+
+    const client = new ScpiSocket({ host: '127.0.0.1', port });
+    await client.connect();
+
+    const extra: string[] = [];
+    client.on('unsolicited', (line) => extra.push(line));
+
+    // The pending query takes the first line...
+    await expect(client.query('SOURCE:VOLTAGE?')).resolves.toBe('1.000');
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    // ...and the second is surfaced rather than silently prepended to the
+    // next caller's answer.
+    expect(extra).toEqual(['2.000']);
+
+    await client.close();
+    await new Promise<void>((resolve) =>
+      server.close(() => {
+        resolve();
+      }),
+    );
+  });
+
+  it('stays in sync when a late reply lands after its request timed out', async () => {
+    // Reply 1 is held past the timeout; reply 2 is prompt. The late reply must
+    // not be handed to the second caller.
+    const { device, socket } = await open(
+      { replyDelay: (n) => (n === 1 ? 300 : 0) },
+      { timeout: 60 },
+    );
+    device.voltage = 5;
+    device.current = 3;
+
+    const unsolicited: string[] = [];
+    socket.on('unsolicited', (line) => unsolicited.push(line));
+
+    await expect(socket.query('SOURCE:VOLTAGE?')).rejects.toThrow(
+      XLNTimeoutError,
+    );
+    // The next request must get its own answer, not the abandoned one.
+    await expect(socket.query('SOURCE:CURRENT?')).resolves.toBe('3.000');
+
+    await new Promise((resolve) => setTimeout(resolve, 350));
+    expect(unsolicited).toEqual(['5.000']);
   });
 });

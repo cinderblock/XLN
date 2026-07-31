@@ -93,6 +93,28 @@ await psu.socket.transaction(async (ch) => {
 });
 ```
 
+### Reading V and I together
+
+Two separate `await`s are a round trip apart, and because serialization is
+per-request another caller's query can land between them. On a transient load —
+inrush, a switching supply, the instant the output is enabled — multiplying
+those two readings gives a power figure that was never simultaneously true.
+
+`measure()` takes both inside one transaction, so nothing interleaves and the
+gap is as small as the wire allows:
+
+```ts
+const { voltage, current, power, timestamp } = await psu.measure();
+
+// Regulation mode too, at the cost of a third round trip in the same
+// transaction:
+const reading = await psu.measure({ mode: true });
+if (reading.mode === 'CC') console.log('current limited');
+```
+
+Use this for poll loops. `measureVoltage()` / `measureCurrent()` remain for when
+you genuinely only need one.
+
 ### Setters are verified by default
 
 Set commands produce no reply, and this firmware has **no `*OPC?`** — so a
@@ -144,8 +166,8 @@ Every method is async. Getters return `number` or `boolean`, never strings.
 **Identity and reset** — `identity`, `spec`, `getIdentity()`, `reset()`,
 `clearStatus()`, `saveToMemory(slot)`, `recallFromMemory(slot)`, `abort()`
 
-**Measurement** — `measureVoltage()`, `measureCurrent()`, `measurePower()`,
-`fetchVoltage()`, `fetchCurrent()`
+**Measurement** — `measure()`, `measureVoltage()`, `measureCurrent()`,
+`measurePower()`, `fetchVoltage()`, `fetchCurrent()`
 
 **Setpoints** — `getVoltage()`/`setVoltage(v)`, `getCurrent()`/`setCurrent(a)`
 
@@ -195,12 +217,43 @@ All derive from `XLNError`.
 | `XLNDeviceError`     | Device reported an error via `SYSTEM:ERROR?`        |
 | `XLNRangeError`      | Value out of range for this model; nothing was sent |
 
+## Testing your own code
+
+The mock device the library tests against is published as `xln/testing`, so you
+can drive your code without hardware:
+
+```ts
+import { MockDevice } from 'xln/testing';
+import { connect } from 'xln';
+
+const device = await MockDevice.start();
+const psu = await connect({ host: '127.0.0.1', port: device.port });
+
+device.voltage = 12;
+device.output = true;
+console.log(await psu.measure());
+
+await psu.close();
+await device.stop();
+```
+
+It models the behaviours that actually matter — set commands reply with
+nothing, unrecognized commands queue a command error — and can reproduce the
+framing pathologies the transport has to survive: fragmented replies, NUL
+padding, alternate terminators, coalesced replies, and late replies that arrive
+after their request has already timed out.
+
+```ts
+// A reply that arrives 300 ms late, after a 60 ms timeout has fired:
+await MockDevice.start({ replyDelay: (n) => (n === 1 ? 300 : 0) });
+```
+
 ## Testing against real hardware
 
 ```bash
-npm run smoke -- 192.168.1.50                  # read-only
-npm run smoke -- 192.168.1.50 --allow-output   # briefly drives the output
-npm run probe -- 192.168.1.50                  # protocol probe, read-only
+bun run smoke 192.168.1.50                  # read-only
+bun run smoke 192.168.1.50 --allow-output   # briefly drives the output
+bun run probe 192.168.1.50                  # protocol probe, read-only
 ```
 
 `probe` resolves the response encodings the B&K manual leaves undocumented and
@@ -275,14 +328,17 @@ Everything else keeps a recognizable name, so porting is mechanical.
 ## Contributing
 
 ```bash
-npm install
-npm run check   # format, lint, typecheck, test
-npm run build
+bun install
+bun run check   # format, lint, typecheck, test
+bun run build
 ```
 
-Tests run against a mock XLN device (`test/mock-device.ts`) and need no
-hardware. Some tests load the built `dist/` through both ESM and CommonJS, so
-run `npm run build` before `npm test` if you're changing packaging.
+Dependencies are managed with Bun. The library targets Node, and CI runs the
+suite on Node 20.19, 22 and 24.
+
+Tests run against the mock device in `src/testing/` and need no hardware. Some
+tests load the built `dist/` through both ESM and CommonJS, so run
+`bun run build` before `bun run test` if you're changing packaging.
 
 Protocol decisions and their sources are documented in
 [`plans/xln-modernization.md`](plans/xln-modernization.md).

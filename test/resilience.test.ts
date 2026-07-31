@@ -7,7 +7,7 @@
  */
 
 import { afterEach, describe, expect, it } from 'vitest';
-import { MockDevice } from './mock-device.js';
+import { MockDevice } from '../src/testing/index.js';
 import { ScpiSocket } from '../src/transport.js';
 import { connect, type XLN } from '../src/xln.js';
 import { XLNConnectionError } from '../src/errors.js';

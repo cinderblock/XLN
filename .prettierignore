@@ -1,6 +1,7 @@
 dist/
 coverage/
 package-lock.json
+bun.lock
 
 # Correspondence from other agents/repos — leave their formatting alone.
 plans/consumer-requests-*.md

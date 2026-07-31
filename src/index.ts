@@ -16,7 +16,14 @@
  * ```
  */
 
-export { XLN, connect, type XLNOptions, type PowerOnMode } from './xln.js';
+export {
+  XLN,
+  connect,
+  type XLNOptions,
+  type PowerOnMode,
+  type MeasureOptions,
+  type Measurement,
+} from './xln.js';
 
 export {
   ScpiSocket,

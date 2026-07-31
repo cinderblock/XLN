@@ -1,0 +1,6 @@
+{
+  "//": "Redirect stub so `xln/testing` also resolves under legacy node10 module resolution, which cannot see subpath exports. The real entry is the ./testing condition in the root package.json.",
+  "main": "../dist/testing/index.cjs",
+  "module": "../dist/testing/index.mjs",
+  "types": "../dist/testing/index.d.cts"
+}

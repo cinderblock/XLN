@@ -27,16 +27,21 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      # Dependencies come from Bun, but the publish itself goes through npm:
+      # provenance attestation is an npm feature and needs npm >= 9.5.
       - uses: actions/setup-node@v7
         with:
           node-version: '24'
           registry-url: https://registry.npmjs.org
-          cache: npm
 
-      - run: npm ci
-      - run: npm run build
-      - run: npm run check
-      - run: npm run check:package
+      - run: bun install --frozen-lockfile
+      - run: bun run build
+      - run: bun run check
+      - run: bun run check:package
 
       - name: Pick the dist-tag
         id: disttag

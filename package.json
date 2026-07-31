@@ -14,13 +14,24 @@
         "default": "./dist/index.cjs"
       }
     },
+    "./testing": {
+      "import": {
+        "types": "./dist/testing/index.d.mts",
+        "default": "./dist/testing/index.mjs"
+      },
+      "require": {
+        "types": "./dist/testing/index.d.cts",
+        "default": "./dist/testing/index.cjs"
+      }
+    },
     "./package.json": "./package.json"
   },
   "main": "./dist/index.cjs",
   "module": "./dist/index.mjs",
   "types": "./dist/index.d.cts",
   "files": [
-    "dist"
+    "dist",
+    "testing"
   ],
   "engines": {
     "node": ">=20.19.0"

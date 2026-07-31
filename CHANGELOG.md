@@ -40,6 +40,16 @@ Complete rewrite in TypeScript. The API is promise-based and breaking; see
 
 ### Added
 
+- `measure()` — voltage, current, derived power and an optional CV/CC mode from
+  a **single transaction**, so the readings describe the same moment. Two
+  separate `await`s are a round trip apart and another caller's query can land
+  between them, which on a transient load yields a V×I product that was never
+  simultaneously true. `measurePower()` now uses it. Reported by the XLN-Control
+  agent against `1.0.0-alpha.1`.
+- `xln/testing` — the mock device the library's own suite runs against, so
+  consumers can test without hardware. Reproduces fragmented replies, NUL
+  padding, alternate terminators, coalesced replies, and late replies that
+  arrive after their request has timed out.
 - Full TypeScript types, dual ESM/CommonJS output, validated by `publint` and
   `attw` on every build.
 - `autoCheckErrors` (default **on**): each write is followed by
@@ -60,15 +70,19 @@ Complete rewrite in TypeScript. The API is promise-based and breaking; see
 - Front-panel key lock, LCD backlight, aux 5 V output, power-on state
   configuration, and the `MEMORY` preset subsystem.
 - `[Symbol.asyncDispose]` for `await using`.
-- `npm run probe` and `npm run smoke` for testing against real hardware.
+- `bun run probe` and `bun run smoke` for testing against real hardware.
 
 ### Notes
 
 - Requires Node 20.19 or newer.
+- Dependencies are managed with Bun (`bun.lock`); the library targets Node and
+  CI runs the suite on Node 20.19, 22 and 24.
+- Releases go through GitHub Actions only. `prepublishOnly` refuses to run
+  outside CI.
 - Published under the `next` dist-tag. `0.6.4` remains `latest` until this has
   been exercised on real hardware.
 - Several response encodings are undocumented in the B&K manuals and are parsed
-  defensively. `npm run probe` resolves them against a real unit; please open an
+  defensively. `bun run probe` resolves them against a real unit; please open an
   issue with its output.
 
 ## 0.6.4 and earlier

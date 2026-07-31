@@ -215,6 +215,34 @@ code throws. Costs a round trip; users who need throughput set it false.
       environment, and an `NPM_TOKEN` secret. **Must land on `next`, never
       `latest`** — 0.6.4 stays `latest` until the alpha has run on hardware.
 
+## Round 2: consumer feedback and follow-up decisions
+
+The XLN-Control agent reviewed `1.0.0-alpha.1` (see
+`plans/consumer-requests-xln-control-round-2.md`) and found a real bug.
+
+- **`measurePower()` was incoherent.** Two separate `await`s meant
+  `V(t) x I(t + one round trip)`, and since serialization is per-request another
+  caller's query could land between them and widen the gap arbitrarily. Fixed by
+  adding `measure()`, which takes V, I and an optional CV/CC mode inside one
+  `transaction()`. `measurePower()` now delegates to it.
+- **Coalesced replies to _different_ requests cannot happen against this
+  client.** Trying to test it via the mock deadlocks: strict one-in-flight means
+  request 2 is not sent until reply 1 arrives, so a well-behaved device has
+  nothing to batch. The framing is still tested for it, using a raw server that
+  volunteers both replies in one segment. This retroactively validates choosing
+  strict serialization over a pipelined FIFO.
+- **`xln/testing`** now exports the mock so the consumer can delete their own
+  simulator. Needs a `testing/package.json` redirect stub shipped in `files` —
+  legacy node10 resolution cannot see subpath exports, and attw flags it
+  otherwise.
+- **Hardware availability was contradictory.** The consumer agent was told no
+  supply was reachable; Cameron confirmed to me directly (twice) that one **can
+  be plugged in**. The probe remains a real near-term step.
+- **Switched to Bun** (`bun.lock`) to match `react-smoothie`, `CloudWarden`,
+  `battery-controller`, `Gate Manager` and XLN-Control. CI installs with Bun but
+  runs the suite on Node across the 20.19/22/24 matrix, and the release job
+  still publishes with npm because provenance is an npm feature.
+
 ## Findings / gotchas discovered during implementation
 
 - **TypeScript 7.0.2 is `latest` but unusable here.** `typescript-eslint` 8.65 caps
@@ -245,7 +273,7 @@ code throws. Costs a round trip; users who need throughput set it false.
 - 93 tests green: framing (fragmented, NUL-padded, CR/LF/CRLF), queue serialization
   under concurrency, timeouts and late-reply resync, abort, reconnect with backoff,
   range validation, error checking, and both module formats of the built bundle.
-- `npm run probe` and `npm run smoke` (including `--allow-output`) both exercised
+- `bun run probe` and `bun run smoke` (including `--allow-output`) both exercised
   end to end against the mock device.
 - `bun link` verified from a scratch project outside the repo, driving a real socket
   under both `node` and `bun`.

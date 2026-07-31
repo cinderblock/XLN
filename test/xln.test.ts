@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { MockDevice, type MockDeviceOptions } from './mock-device.js';
+import { MockDevice, type MockDeviceOptions } from '../src/testing/index.js';
 import type { XLN } from '../src/xln.js';
 import { connect, type XLNOptions } from '../src/xln.js';
 import { XLNDeviceError, XLNRangeError } from '../src/errors.js';

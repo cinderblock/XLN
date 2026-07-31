@@ -30,33 +30,40 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
+      # Dependencies are installed with Bun, but the suite runs on Node — the
+      # library targets Node and the matrix is what proves the engines range.
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
       - uses: actions/setup-node@v7
         with:
           node-version: ${{ matrix.node }}
-          cache: npm
 
-      - run: npm ci
+      - run: bun install --frozen-lockfile
 
       # Build first: some tests load dist/ through both ESM and CommonJS to
       # catch a broken exports map before it reaches the registry.
-      - run: npm run build
+      - run: bun run build
 
-      - run: npm run format:check
-      - run: npm run lint
-      - run: npm run typecheck
-      - run: npm test
+      - run: bun run format:check
+      - run: bun run lint
+      - run: bun run typecheck
+      - run: bun run test
 
   package:
     name: Package
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
       - uses: actions/setup-node@v7
         with:
           node-version: '24'
-          cache: npm
-      - run: npm ci
-      - run: npm run build
+      - run: bun install --frozen-lockfile
+      - run: bun run build
       # publint checks the exports map; attw checks that types resolve under
       # every module mode, not just the one we happen to develop in.
-      - run: npm run check:package
+      - run: bun run check:package

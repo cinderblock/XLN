@@ -36,6 +36,34 @@ const ERROR_QUERY = 'SYSTEM:ERROR?';
 /** What the supply should do with its output at power-on. */
 export type PowerOnMode = 'off' | 'last' | 'user';
 
+/** Options for {@link XLN.measure}. */
+export interface MeasureOptions {
+  /**
+   * Also read the CV/CC regulation mode. Costs an extra round trip inside the
+   * same transaction, so it is off by default.
+   */
+  mode?: boolean;
+}
+
+/** A coherent set of readings taken in one uninterrupted exchange. */
+export interface Measurement {
+  /** Measured output voltage, in volts. */
+  readonly voltage: number;
+  /** Measured output current, in amps. */
+  readonly current: number;
+  /** `voltage * current`, in watts. */
+  readonly power: number;
+  /**
+   * `Date.now()` at the moment the exchange began.
+   *
+   * The readings are one round trip apart (typically ~50 ms on this
+   * hardware), not instantaneous — this marks the start of that window.
+   */
+  readonly timestamp: number;
+  /** Regulation mode, present only when `{ mode: true }` was requested. */
+  readonly mode?: RegulationMode;
+}
+
 export interface XLNOptions extends ScpiSocketOptions {
   /**
    * Query `SYSTEM:ERROR?` after every write and throw if the device reports a
@@ -202,11 +230,59 @@ export class XLN {
     return this.queryNumber('MEASURE:CURRENT?');
   }
 
-  /** Measured output power, in watts. Convenience over two measurements. */
+  /**
+   * Read voltage and current as one uninterrupted exchange.
+   *
+   * Prefer this over separate `measureVoltage()` / `measureCurrent()` calls
+   * whenever you need the two to describe the *same* moment. Because commands
+   * are serialized per-request, two separate calls can have another caller's
+   * query land between them, so the pair may straddle an arbitrary gap — and
+   * even back to back they are a round trip apart. On a transient load
+   * (inrush, a switching supply, the instant the output is enabled) that
+   * produces a V×I product that was never simultaneously true.
+   *
+   * This runs both queries inside a single transaction, so nothing can
+   * interleave and the gap is one round trip — the closest the wire allows.
+   *
+   * @param options.mode Also read the CV/CC regulation mode. Costs a third
+   * round trip, so it is opt-in.
+   */
+  async measure(options: MeasureOptions = {}): Promise<Measurement> {
+    return this.socket.transaction(async (channel: ScpiChannel) => {
+      // Timestamped at the start of the exchange, not the end, so the value
+      // marks when the readings began rather than when parsing finished.
+      const timestamp = Date.now();
+      const voltage = parseNumber(
+        await channel.query('MEASURE:VOLTAGE?'),
+        'MEASURE:VOLTAGE?',
+      );
+      const current = parseNumber(
+        await channel.query('MEASURE:CURRENT?'),
+        'MEASURE:CURRENT?',
+      );
+      const mode = options.mode
+        ? parseRegulationMode(await channel.query('OUTPUT:STATE?'))
+        : undefined;
+
+      return {
+        voltage,
+        current,
+        power: voltage * current,
+        timestamp,
+        ...(mode === undefined ? {} : { mode }),
+      };
+    });
+  }
+
+  /**
+   * Measured output power, in watts.
+   *
+   * Both readings come from a single transaction, so they describe the same
+   * moment as closely as the protocol permits. Use {@link measure} if you also
+   * want the underlying voltage and current.
+   */
   async measurePower(): Promise<number> {
-    const volts = await this.measureVoltage();
-    const amps = await this.measureCurrent();
-    return volts * amps;
+    return (await this.measure()).power;
   }
 
   /** Return the last-fetched output voltage without re-measuring. */

@@ -15,7 +15,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { dirname, resolve } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import type * as XlnSource from '../src/index.js';
-import { MockDevice } from './mock-device.js';
+import { MockDevice } from '../src/testing/index.js';
 
 /** The bundle is expected to expose exactly the source's public surface. */
 type XlnModule = typeof XlnSource;

@@ -28,6 +28,23 @@ export interface MockDeviceOptions {
   responseDelay?: number;
   /** Encode booleans as `ON`/`OFF` instead of `1`/`0`. */
   verboseBooleans?: boolean;
+  /**
+   * Hold this many replies and flush them together in a **single** TCP write.
+   *
+   * This is the case that breaks naive response correlation: two replies to
+   * two *different* requests arriving in one segment. A handler that resolves
+   * on the `data` event gets both concatenated, and every later request is
+   * off by one from then on.
+   */
+  coalesceReplies?: number;
+  /**
+   * Per-reply delay in milliseconds, keyed by 1-based reply index.
+   *
+   * Use to make a specific reply arrive *after* its request has already timed
+   * out, which is how a late reply reaches the `'unsolicited'` path.
+   * Overrides {@link responseDelay} for that index.
+   */
+  replyDelay?: (index: number) => number | undefined;
 }
 
 interface MemorySlot {
@@ -42,6 +59,11 @@ export class MockDevice {
 
   /** Every command line received, in order. Useful for asserting wire format. */
   readonly received: string[] = [];
+
+  /** Replies emitted so far, for {@link MockDeviceOptions.replyDelay}. */
+  private replyCount = 0;
+  /** Replies held back by {@link MockDeviceOptions.coalesceReplies}. */
+  private pendingBatch: string[] = [];
 
   // Device state.
   voltage = 0;
@@ -167,19 +189,55 @@ export class MockDevice {
       payload = payload.padEnd(this.options.padTo, '\0');
     }
 
-    const send = (): void => {
+    this.replyCount += 1;
+    const index = this.replyCount;
+
+    const write = (data: string): void => {
       if (socket.destroyed) return;
       if (this.options.fragmentResponses) {
-        for (const char of payload) socket.write(char);
+        for (const char of data) socket.write(char);
       } else {
-        socket.write(payload);
+        socket.write(data);
       }
     };
 
-    if (this.options.responseDelay) {
-      setTimeout(send, this.options.responseDelay);
+    // Coalescing: buffer until we have `coalesceReplies` of them, then emit
+    // the whole batch as one write so they land in a single segment.
+    const batchSize = this.options.coalesceReplies ?? 1;
+    const send = (): void => {
+      if (batchSize <= 1) {
+        write(payload);
+        return;
+      }
+      this.pendingBatch.push(payload);
+      if (this.pendingBatch.length >= batchSize) {
+        const batch = this.pendingBatch.join('');
+        this.pendingBatch = [];
+        write(batch);
+      }
+    };
+
+    const delay =
+      this.options.replyDelay?.(index) ?? this.options.responseDelay;
+    if (delay) {
+      setTimeout(send, delay);
     } else {
       send();
+    }
+  }
+
+  /**
+   * Flush any replies held back by {@link MockDeviceOptions.coalesceReplies}.
+   *
+   * Needed when the batch never fills — e.g. coalescing 2 but only 1 more
+   * request is made.
+   */
+  flush(): void {
+    if (this.pendingBatch.length === 0) return;
+    const batch = this.pendingBatch.join('');
+    this.pendingBatch = [];
+    for (const socket of this.sockets) {
+      if (!socket.destroyed) socket.write(batch);
     }
   }
 
