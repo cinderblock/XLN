@@ -192,6 +192,25 @@ async function main(): Promise<void> {
   }
 
   // --- concurrent sessions -----------------------------------------------
+  //
+  // ALREADY ANSWERED, DESTRUCTIVELY. On an XLN6024 running firmware 1.20 this
+  // test made the device reset the second session and then stop accepting TCP
+  // on ports 80, 5024 and 5025 entirely, while still answering ICMP. It did
+  // not recover on its own, and a power cycle was needed. Do not run it
+  // casually — it is behind a flag so it cannot happen by accident again.
+  if (!process.argv.includes('--danger-second-connection')) {
+    console.log('## Second simultaneous connection');
+    console.log('   SKIPPED — this wedged an XLN6024 (fw 1.20) hard enough to');
+    console.log('   need a power cycle. Answer: the device is single-session.');
+    console.log('   Pass --danger-second-connection to run it anyway.\n');
+    socket.end();
+    console.log('---');
+    console.log('Paste this whole output into');
+    console.log('https://github.com/cinderblock/XLN/issues so the answers can');
+    console.log('become test fixtures in test/parse.test.ts.');
+    return;
+  }
+
   console.log('## Second simultaneous connection');
   console.log('   Does the device accept two sessions on 5025 at once?');
   try {
