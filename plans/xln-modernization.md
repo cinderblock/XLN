@@ -275,6 +275,39 @@ reasoning alone. **That change is the only reason `getRegulationMode()` does not
 throw against real hardware in its most common state** (output off). Add `'OFF'`
 to the documented union members.
 
+### UDP: probed against real hardware, silent everywhere
+
+Ran `bun run probe:udp 10.255.14.231` (2026-08-02). **Every probe silent:**
+
+- Unicast `*IDN?` to udp/9221, udp/5025, udp/5024 — nothing
+- The exact 2015 `udpXLN` wire format (96-byte NUL-padded `*IDN?`) to udp/9221 — nothing
+- The 2015 `readStatus()` payload (`MEAS:CURR?`, 96-byte padded) — nothing
+- Broadcast `*IDN?` to 255.255.255.255 and every interface's directed broadcast,
+  on 9221 and 5025 — nothing
+
+**Caveat, stated honestly:** this run happened while the unit's TCP services were
+down (see below), so if the whole remote subsystem was disabled then a UDP server
+would have been off too. Re-run on a healthy unit to make it conclusive. An earlier
+broadcast-only run on a _healthy_ network was also silent, and three manual
+revisions contain zero mentions of UDP — so the conclusion is very likely right,
+just not yet airtight.
+
+### Why UDP would not help even if it existed
+
+Worth recording, because it comes up: the response-correlation problem is **not** a
+TCP problem. It is that the device's replies carry no identifier — no echo, no
+sequence number, no tag. `12.345` arrives and nothing in it says which question it
+answers. That is true over any transport.
+
+TCP at least guarantees ordering and delivery. UDP guarantees neither. Combining
+"replies carry no identifier" with "replies can arrive out of order or vanish"
+makes correlation impossible rather than merely awkward. Switching to UDP would
+remove the one property the current design relies on.
+
+The correlation issue is also already solved: strict one-in-flight serialization,
+with a test firing five concurrent queries that asserts each caller gets its own
+answer.
+
 ### DANGER: a second TCP connection can wedge the instrument
 
 Opening a second simultaneous connection to port 5025 caused the device to
@@ -289,6 +322,15 @@ single-session":
 
 **Never open a second connection. Always close cleanly. A crashed client can
 leave the instrument unreachable until it is power-cycled.**
+
+**Update (2026-08-02): a power cycle alone did not restore it.** After Cameron
+power-cycled, the unit answers ICMP ping but ports 80, 5024 and 5025 all still
+refuse. It is not elsewhere on the subnet either (full /24 sweep found nothing).
+Most likely the power cycle reset the front-panel remote interface selection away
+from Ethernet — the manual requires System Setting -> Remote Control -> Ethernet
+to be chosen manually, and with USB or GPIB selected the LAN stack can still hold
+an IP (answering ping) without starting the TCP servers. Needs checking at the
+front panel.
 
 This belongs in the README as a prominent warning, and it is worth considering
 whether the library should actively help — e.g. documenting `close()` in a
