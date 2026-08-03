@@ -28,6 +28,19 @@ afterEach(async () => {
 const wait = (ms: number): Promise<void> =>
   new Promise((resolve) => setTimeout(resolve, ms));
 
+/** Poll until `check` passes, so tests assert on state rather than on time. */
+async function until(
+  check: () => boolean,
+  what: string,
+  ms = 5000,
+): Promise<void> {
+  const deadline = Date.now() + ms;
+  while (!check()) {
+    if (Date.now() > deadline) throw new Error(`timed out waiting for ${what}`);
+    await wait(5);
+  }
+}
+
 describe('AbortSignal', () => {
   it('aborts a connection attempt in progress', async () => {
     const controller = new AbortController();
@@ -60,8 +73,15 @@ describe('AbortSignal', () => {
     socket = new ScpiSocket({ host: '127.0.0.1', port: device.port });
     await socket.connect();
 
-    const unsolicited: string[] = [];
-    socket.on('unsolicited', (line) => unsolicited.push(line));
+    const abandoned = new Promise<string>((resolve, reject) => {
+      const timer = setTimeout(() => {
+        reject(new Error('no late reply'));
+      }, 5000);
+      socket!.once('unsolicited', (line) => {
+        clearTimeout(timer);
+        resolve(line);
+      });
+    });
 
     const controller = new AbortController();
     const aborted = socket.query('SOURCE:VOLTAGE?', {
@@ -73,8 +93,7 @@ describe('AbortSignal', () => {
     await expect(aborted).rejects.toThrow(/Aborted/);
 
     // The abandoned reply is discarded, not handed to the next caller.
-    await wait(250);
-    expect(unsolicited).toEqual(['0.000']);
+    await expect(abandoned).resolves.toBe('0.000');
 
     device.voltage = 7;
     await expect(socket.query('SOURCE:VOLTAGE?')).resolves.toBe('7.000');
@@ -222,9 +241,10 @@ describe('auto-reconnect', () => {
     device = await MockDevice.startOn(port);
     device.pushError(-2);
     await reconnected;
-    await wait(50);
-
-    expect(device.received).toContain('*CLS');
+    await until(
+      () => device!.received.includes('*CLS'),
+      '*CLS after reconnect',
+    );
     await expect(psu.setVoltage(5)).resolves.toBeUndefined();
   });
 });

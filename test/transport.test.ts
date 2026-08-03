@@ -9,6 +9,19 @@ import { XLNConnectionError, XLNTimeoutError } from '../src/errors.js';
 let device: MockDevice | undefined;
 let socket: ScpiSocket | undefined;
 
+/** Resolve on the next `unsolicited` line, so tests never race a sleep. */
+function nextUnsolicited(from: ScpiSocket, ms = 5000): Promise<string> {
+  return new Promise<string>((resolve, reject) => {
+    const timer = setTimeout(() => {
+      reject(new Error('no unsolicited line arrived'));
+    }, ms);
+    from.once('unsolicited', (line) => {
+      clearTimeout(timer);
+      resolve(line);
+    });
+  });
+}
+
 afterEach(async () => {
   await socket?.close();
   await device?.stop();
@@ -146,17 +159,15 @@ describe('timeouts', () => {
   it('discards a late reply instead of desynchronizing', async () => {
     const { socket } = await open({ responseDelay: 120 }, { timeout: 40 });
 
-    const unsolicited: string[] = [];
-    socket.on('unsolicited', (line) => unsolicited.push(line));
+    const late = nextUnsolicited(socket);
 
     await expect(socket.query('SOURCE:VOLTAGE?')).rejects.toThrow(
       XLNTimeoutError,
     );
-    await new Promise((resolve) => setTimeout(resolve, 200));
 
-    // The late reply surfaced as an event rather than being handed to the
+    // The late reply surfaces as an event rather than being handed to the
     // next caller.
-    expect(unsolicited).toEqual(['0.000']);
+    await expect(late).resolves.toBe('0.000');
   });
 });
 
@@ -217,13 +228,12 @@ describe('unsolicited data', () => {
   it('emits stray lines rather than letting them shift the stream', async () => {
     const { device, socket } = await open();
 
-    const unsolicited: string[] = [];
-    socket.on('unsolicited', (line) => unsolicited.push(line));
-
+    // Await the event rather than sleeping and hoping. A fixed 50 ms wait
+    // passed everywhere except a loaded macOS runner, which is exactly the
+    // kind of flake that erodes trust in a suite.
+    const seen = nextUnsolicited(socket);
     device.emitUnsolicited('SPURIOUS');
-    await new Promise((resolve) => setTimeout(resolve, 50));
-
-    expect(unsolicited).toEqual(['SPURIOUS']);
+    await expect(seen).resolves.toBe('SPURIOUS');
     // The very next query still gets its own answer.
     await expect(socket.query('SOURCE:VOLTAGE?')).resolves.toBe('0.000');
   });
