@@ -638,6 +638,32 @@ Note the other byte-0 bits stay **unverified** — the backlight bit reads 0 whi
 the backlight is visibly on, so either that assignment differs or the bit means
 something other than the obvious. Only the output/OVP/OCP bits are proven.
 
+### Trusted publishing does not cover `npm deprecate`
+
+Tried to deprecate `1.0.0-alpha.1` from CI, reusing the trusted-publishing
+setup. It fails:
+
+```
+npm error code E404
+npm error 404 Not Found - PUT https://registry.npmjs.org/xln
+```
+
+A 404 on PUT is npm's way of saying unauthenticated. **The OIDC exchange happens
+inside `npm publish` itself** — no other npm command triggers it, so `npm
+deprecate` ran with no credentials at all. The workflow was removed rather than
+left in the repo permanently failing.
+
+Ways to deprecate a version, in order of preference:
+
+1. **The npmjs.com web UI.** Package page -> Versions -> the version's menu has a
+   deprecate option. No credentials anywhere, one action, reversible.
+2. A **granular access token** in repo secrets, used by a deprecate workflow.
+   Works, but reintroduces exactly the stored credential that trusted publishing
+   removed — only worth it if deprecating becomes routine.
+3. `npm deprecate` from a workstation. Technically not a publish, but it needs
+   registry credentials locally, which is the thing the no-CLI-publish rule
+   exists to avoid.
+
 ## Findings / gotchas discovered during implementation
 
 - **TypeScript 7.0.2 is `latest` but unusable here.** `typescript-eslint` 8.65 caps
