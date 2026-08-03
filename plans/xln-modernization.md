@@ -653,16 +653,17 @@ inside `npm publish` itself** — no other npm command triggers it, so `npm
 deprecate` ran with no credentials at all. The workflow was removed rather than
 left in the repo permanently failing.
 
-Ways to deprecate a version, in order of preference:
+**Cameron's ruling: running `npm deprecate` locally is fine.** The no-CLI-publish
+rule is about shipping code, not about touching the registry — a deprecation
+publishes no artifact, is reversible, and has no build to make reproducible. I
+over-applied the rule; that clarification now lives in the global CLAUDE.md so it
+generalizes to `npm dist-tag`, `npm owner` and `npm access` too.
 
-1. **The npmjs.com web UI.** Package page -> Versions -> the version's menu has a
-   deprecate option. No credentials anywhere, one action, reversible.
-2. A **granular access token** in repo secrets, used by a deprecate workflow.
-   Works, but reintroduces exactly the stored credential that trusted publishing
-   removed — only worth it if deprecating becomes routine.
-3. `npm deprecate` from a workstation. Technically not a publish, but it needs
-   registry credentials locally, which is the thing the no-CLI-publish rule
-   exists to avoid.
+Practical snag when actually doing it: `npm whoami` and `npm profile get` succeed
+(reads), but `npm deprecate` is a write and npm kicks off an **interactive browser
+auth flow** — with `two-factor auth: auth-only` on the account, the stored token
+does not carry write authority. Not something an agent can complete. Cameron runs
+the command, or uses the web UI.
 
 ## Findings / gotchas discovered during implementation
 
