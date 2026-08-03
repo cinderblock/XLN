@@ -74,17 +74,15 @@ PDF pp. 98-203 cover XLN15010/30052/60026).
 
 ### Findings that change the design
 
-- **UDP / port 9221 does not exist on this device.** Zero occurrences of "UDP",
-  "9221", "broadcast", or "discovery" across the 2010, 2013, and 2018 manuals or the
-  datasheet. The manuals document exactly three LAN modes: web server (port 80,
-  Java), Telnet (5024), and raw sockets (5025). Port 9221 is an **Aim-TTi**
-  convention and it is TCP there, not UDP.
-  Corroborating evidence from our own history: UDP was the entire initial commit
-  (`7b9f5d4`) with an empty `parseMessage` stub that just returned the string
-  unchanged; TCP landed the next day (`b2a4ed8`) and every commit after that touched
-  only the TCP class. **The `udpXLN` class almost certainly never worked. Drop it.**
-  There is no vendor-supported discovery mechanism at all — the only option would be
-  sweeping the subnet with TCP connects + `*IDN?`, which is out of scope.
+- ~~**UDP / port 9221 does not exist on this device.**~~ **RETRACTED — WRONG.**
+  See "UDP 9221 IS REAL" below, and "SOLVED: the protocol is a Java applet". UDP
+  9221 exists, the vendor's own Java applet uses it, and the `udpXLN` class did
+  work. What remains true from the original note: the manuals really do contain
+  zero occurrences of "UDP"/"9221"/"broadcast"/"discovery" and document only web
+  (80), Telnet (5024) and raw sockets (5025); and there is genuinely **no
+  discovery mechanism**, because the applet learns the address from
+  `getCodeBase()` and never needed one. The Aim-TTi 9221 convention is real but
+  is TCP and appears to be an unrelated coincidence.
 
 - **Set commands return nothing.** `*CLS`, `*RST`, `*SAV`, `*RCL`, `ABOR`,
   `OUTP:PROT:CLE` and every setter produce no response. The 0.6.x API accepts a
@@ -297,8 +295,26 @@ A **status poll**, not a command channel:
 - **The payload content is entirely ignored.** `*IDN?`, `MEAS:VOLT?`, `STATUS?`,
   an empty buffer and pure garbage all return the identical frame. You cannot
   ask it anything; you poke it and it reports.
-- **Length matters.** 6/16/32/48/64 bytes and exactly 96 bytes get a reply. 95,
-  97, 128 and 256 get silence. (The 65-95 band is untested apart from 95.)
+- **Length matters, and the rule is now exact.** Full sweep 2026-08-02 of
+  0,1,2,4,6,8,10,11,12,16,20,24,32,40,48,56,64,72,80,88,92,94,95,96,97,100,112,128:
+
+  > **The device replies iff the payload length is even and ≤ 96.**
+
+  Accepted: 0,2,4,6,8,10,12,16,20,24,32,40,48,56,64,72,80,88,92,94,96. Silent:
+  1, 11, 95, 97 (odd) and 100, 112, 128 (even but > 96). Every reply is 96 bytes.
+  **A zero-length datagram works** and is the cheapest possible poke.
+
+  The earlier note ("6/16/32/48/64/96 get a reply") was consistent with this but
+  over-generalised into "fixed sizes" — the sizes originally tried simply happened
+  to be even. Even-or-odd, not multiples of anything.
+
+  This looks like an embedded receiver copying the datagram into a 96-byte buffer
+  in **16-bit words**: it rejects odd lengths because it cannot copy a half-word,
+  and rejects > 96 because that overruns the buffer. Note this is an alignment
+  check, not a grammar check — a command parser would not care whether the
+  request had an even number of bytes. Further evidence the payload is never
+  parsed.
+
 - **Unicast only.** Broadcast to `255.255.255.255` and to every directed
   broadcast address — including the device's own `10.255.15.255` — is silent.
   **So this is not a discovery mechanism.** That part of my advice stands.
@@ -328,6 +344,129 @@ setpoints (the setpoint was 24 V at the time and the frame read 0.000 V).
 field becomes `CV`/`CC`, and whether field offsets shift as values widen. That
 needs the output enabled, which is a hardware state change I have not made
 without asking.
+
+#### SOLVED: the protocol is a Java applet served by the device's own web server
+
+**2026-08-02. This is no longer inference — the client is on the device and has
+been decompiled.**
+
+The XLN is an OEM rebadge. `http://10.255.14.231/` returns
+`<TITLE>Motech DC Power Supply</TITLE>`, the header reads **`D S 6 0 2 4`
+Programmable DC Power Supply**, and the footer is
+`Copyright © 2008 MOTECH INDUSTRIES INC.` B&K Precision Taiwan Inc. **is** the
+former Motech Industries Instrument Division, so XLN6024 = **Motech DS-6024**
+(DS-3640/6024/8018/10018 ↔ XLN3640/6024/8018/10014).
+
+The **Web Control** page (`/control.htm?passwd=GUEST`) contains:
+
+```html
+<applet code="Display.class" height="110" width="490"></applet>
+```
+
+`Display.class` is fetchable unauthenticated from `http://<device>/Display.class`
+(3742 bytes, Java 1.6 / class version 50.0). It is the **only** class on the
+server — every other name returns the 650-byte login page. Decompiled with
+`javap -c -p`, it is a near-verbatim copy of Sun's `QuoteClient` datagram tutorial
+(the leftover debug string `"Quote of the Moment: "` is still in the constant
+pool).
+
+What it does, exactly:
+
+- `init()` — `InetAddress.getByName(getCodeBase().getHost())`. It only ever talks
+  to **the host it was served from**. That is why the service is unicast-only and
+  why there is no broadcast/discovery behaviour: the client never needed it.
+- `run()` — `while (!stopFlag) { repaint(); Thread.sleep(500); doIt(9221); }`.
+  **`sipush 9221`** is the literal in the bytecode. Polls at 2 Hz.
+- `doIt(int port)` — allocates `new byte[96]`, writes bytes 0..10 as
+  `77,69,65,83,58,67,85,82,82,63,13` = **`"MEAS:CURR?\r"`**, leaves bytes 11..95
+  as the JVM's zero fill, and sends `new DatagramPacket(buf, 96, address, port)`.
+  Then `socket.receive()` **into the same packet**, and
+  `new String(packet.getData())`.
+- `paint()` — `Monospaced` PLAIN 40 on black, and exactly two `drawString` calls:
+  - `str.substring(0, 19)` at (10, 45)
+  - `str.substring(33, 52)` at (10, 90)
+
+**Provenance is exact.** Sun's `QuoteClientApplet.java` (1995–96) declares
+`boolean DEBUG; InetAddress address; TextField portField; Label display;
+DatagramSocket socket;` — the identical field set, in the identical order, that
+`Display.class` still carries, including the now-unused `portField` and `display`.
+Every debug string matches verbatim ("Couldn't get Internet address: Unknown
+host", "Couldn't create new DatagramSocket", "Applet about to send packet to
+address ", " at port ", "Applet sent packet.", "Applet socket.send failed:",
+"Applet about to call socket.receive().", "Applet returned from
+socket.receive().", "Applet socket.receive failed:", "Quote of the Moment: "), and
+so does the `void doIt(int port)` signature.
+
+Motech's only functional edits to the tutorial were:
+
+1. `byte[] sendBuf = new byte[256]` → **`new byte[96]`** — this, and nothing more
+   principled, is where 96 comes from.
+2. Prefilled the buffer with `MEAS:CURR?\r`; Sun sent an all-zero buffer.
+3. Hardcoded the port to 9221 instead of reading `portField`.
+4. Added the 500 ms polling `Thread` (Sun's fired on a "Send" button).
+5. Replaced `display.setText(received)` with the two-substring `paint()`.
+
+That matters for the read/write question, because the **server** side of the same
+tutorial (`QuoteServerThread`) does not parse the request at all — it discards the
+received datagram's contents and replies. The observed "content is ignored"
+behaviour is exactly what that archetype produces. (The length-sensitivity is
+Motech's own: Java would silently truncate an oversized datagram rather than drop
+it, so the 95-silent/96-OK check is hand-written code on the instrument side.)
+
+This closes every open question at once:
+
+- **Why 96 bytes, NUL-padded** — the applet's `new byte[96]`.
+- **Why the payload is ignored** — the applet sends one hardcoded string forever;
+  the firmware never had a reason to parse it.
+- **Why `MEAS:CURR?`** — it is the applet's hardcoded payload, byte for byte. The
+  2015 `udpXLN` sending `MEAS:CURR?` in a 96-byte buffer was not a guess or a
+  coincidence; it was copied from this applet.
+- **Why it is display-oriented fixed-width** — it is literally rendered into a
+  490×110 monospaced applet.
+
+#### The frame layout is defined by the applet, not guessed
+
+The applet consumes only **38 of the 96 bytes**, as two 19-character lines:
+
+| Applet line | Slice              | Bytes  | Sample (output off)   |
+| ----------- | ------------------ | ------ | --------------------- |
+| 1 (y=45)    | `substring(0,19)`  | 0..18  | `                OFF` |
+| 2 (y=90)    | `substring(33,52)` | 33..51 | `  0.000 V   0.000 A` |
+
+Both match the measured frame exactly: `OFF` right-aligned ending at byte 18, and
+bytes 33..51 = 2 spaces + `0.000` + space + `V` + 3 spaces + `0.000` + space + `A`
+with `A` at byte 51. Bytes 19..32 and 52..95 are **not read by the vendor's own
+client** and were blank in every sample — treat them as reserved/padding, not as
+fields waiting to be decoded.
+
+Line 1 is a 19-char right-aligned state field, so `CV`/`CC` (if the firmware emits
+them) would land at bytes 17..18, not 16. **Still UNVERIFIED** — needs the output
+on.
+
+#### Can UDP SET anything? Best available answer: no, but not proven
+
+Evidence it is **read-only**:
+
+1. The vendor's own and only UDP client is called **`Display`**, has no input
+   path, and never sends anything but `MEAS:CURR?`.
+2. On the same Web Control page, **setpoints do not go over UDP**: `Vset`, `Iset`
+   and the `CHAN1` ON/OFF radios are plain HTML `<form>` fields submitted over
+   **HTTP**. Motech's design uses HTTP for control and UDP purely for the live
+   readout.
+3. The Motech DS3640 manual says Java is required "for **monitoring** real-time
+   output values" — monitoring, explicitly.
+4. Random garbage payloads return an identical valid frame with no error. If a
+   parser existed, garbage should diverge from valid input somewhere.
+
+Why it is **not proven**: point 4 rules out a parser that rejects; it does not
+rule out a parser that recognises a few prefixes and silently ignores the rest.
+Only query-shaped and garbage payloads have been sent.
+
+**Cheap, zero-risk test that would settle it** (not yet run): send a garbage
+datagram to UDP 9221, then read `SYST:ERR?` over TCP 5025. If UDP payloads ever
+reach the SCPI parser, malformed input should enqueue -113 "Undefined header" or
+similar. An empty error queue after UDP garbage is strong evidence the payload is
+discarded before any parser sees it. This changes no hardware state.
 
 #### The 2015 code was right and I was unfair to it
 
@@ -487,9 +626,12 @@ IP before anything can connect.
 
 ## Things not to do
 
-- **Do not resurrect the UDP class.** It is not a real protocol on this device. If a
-  future session sees `udpXLN` referenced in the npm 0.6.4 tarball or old README and
-  thinks it was dropped by mistake — it was dropped deliberately, see above.
+- ~~**Do not resurrect the UDP class.**~~ **RETRACTED — this instruction was
+  wrong.** UDP 9221 is real and is the vendor's own monitoring transport. Do not
+  re-derive it from scratch either: the authoritative client is
+  `http://<device>/Display.class`, already decompiled, and the frame layout is
+  recorded above. What _is_ still true: **do not treat UDP as a control channel**
+  and do not expect it to do discovery.
 - **Do not use `:OUT` short forms.** 2013-manual-only. Long form everywhere.
 - **Do not expose `SYSTem:REMote` casually.** It switches the active physical
   interface and will disconnect a LAN caller.
