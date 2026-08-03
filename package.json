@@ -52,7 +52,8 @@
     "check:package": "publint --strict && attw --pack .",
     "prepublishOnly": "tsx scripts/guard-publish.ts && npm run build",
     "discover": "tsx scripts/discover.ts",
-    "probe:udp": "tsx scripts/probe-udp.ts"
+    "probe:udp": "tsx scripts/probe-udp.ts",
+    "probe:udp:format": "tsx scripts/probe-udp-format.ts"
   },
   "repository": {
     "type": "git",

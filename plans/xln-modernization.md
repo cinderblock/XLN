@@ -275,38 +275,90 @@ reasoning alone. **That change is the only reason `getRegulationMode()` does not
 throw against real hardware in its most common state** (output off). Add `'OFF'`
 to the documented union members.
 
-### UDP: probed against real hardware, silent everywhere
+### UDP 9221 IS REAL — my earlier conclusion was WRONG and is retracted
 
-Ran `bun run probe:udp 10.255.14.231` (2026-08-02). **Every probe silent:**
+**Retracted:** "There is no UDP protocol on these supplies." I told Cameron that,
+and I told the XLN-Control agent that, and both need correcting. The claim was
+built on three manual revisions containing zero mentions of UDP — which is true,
+but absence from the documentation is not absence from the firmware.
 
-- Unicast `*IDN?` to udp/9221, udp/5025, udp/5024 — nothing
-- The exact 2015 `udpXLN` wire format (96-byte NUL-padded `*IDN?`) to udp/9221 — nothing
-- The 2015 `readStatus()` payload (`MEAS:CURR?`, 96-byte padded) — nothing
-- Broadcast `*IDN?` to 255.255.255.255 and every interface's directed broadcast,
-  on 9221 and 5025 — nothing
+Hardware, 2026-08-03, XLN6024 firmware 1.20 at 10.255.14.231:
 
-**Caveat, stated honestly:** this run happened while the unit's TCP services were
-down (see below), so if the whole remote subsystem was disabled then a UDP server
-would have been off too. Re-run on a healthy unit to make it conclusive. An earlier
-broadcast-only run on a _healthy_ network was also silent, and three manual
-revisions contain zero mentions of UDP — so the conclusion is very likely right,
-just not yet airtight.
+**UDP port 9221 answers.** It did not answer a plain `*IDN?
 
-### Why UDP would not help even if it existed
+`, which is why
+the first probe run reported silence and why I felt confirmed. It answers a
+**fixed-size datagram** — exactly what the 2015 `udpXLN` sent.
 
-Worth recording, because it comes up: the response-correlation problem is **not** a
-TCP problem. It is that the device's replies carry no identifier — no echo, no
-sequence number, no tag. `12.345` arrives and nothing in it says which question it
-answers. That is true over any transport.
+#### What it is
 
-TCP at least guarantees ordering and delivery. UDP guarantees neither. Combining
-"replies carry no identifier" with "replies can arrive out of order or vanish"
-makes correlation impossible rather than merely awkward. Switching to UDP would
-remove the one property the current design relies on.
+A **status poll**, not a command channel:
 
-The correlation issue is also already solved: strict one-in-flight serialization,
-with a test firing five concurrent queries that asserts each caller gets its own
-answer.
+- **The payload content is entirely ignored.** `*IDN?`, `MEAS:VOLT?`, `STATUS?`,
+  an empty buffer and pure garbage all return the identical frame. You cannot
+  ask it anything; you poke it and it reports.
+- **Length matters.** 6/16/32/48/64 bytes and exactly 96 bytes get a reply. 95,
+  97, 128 and 256 get silence. (The 65-95 band is untested apart from 95.)
+- **Unicast only.** Broadcast to `255.255.255.255` and to every directed
+  broadcast address — including the device's own `10.255.15.255` — is silent.
+  **So this is not a discovery mechanism.** That part of my advice stands.
+- **It does not disturb TCP.** Verified healthy on port 5025 before and after.
+
+#### Reply frame: 96 bytes, fixed-width, space-padded
+
+```
+0         10        20        30        40        50        60 ...
+................OFF................0.000.V...0.000.A............
+                ^^^                ^^^^^ ^   ^^^^^ ^
+                offset 16          35    41  45    51
+```
+
+| Offset | Field            | Sample  |
+| ------ | ---------------- | ------- |
+| 16     | output state     | `OFF`   |
+| 35     | measured voltage | `0.000` |
+| 41     | unit             | `V`     |
+| 45     | measured current | `0.000` |
+| 51     | unit             | `A`     |
+
+Sampled with the output off; the numeric fields are measured values, not
+setpoints (the setpoint was 24 V at the time and the frame read 0.000 V).
+
+**UNVERIFIED:** what the frame looks like with the output ON, whether the `OFF`
+field becomes `CV`/`CC`, and whether field offsets shift as values widen. That
+needs the output enabled, which is a hardware state change I have not made
+without asking.
+
+#### The 2015 code was right and I was unfair to it
+
+I described `udpXLN` as "an early guess that was abandoned" and criticised
+`readStatus()` for "sending `MEAS:CURR?` — it reads current, not status". Both
+wrong:
+
+- The 96-byte NUL-padded buffer is **exactly** the format that works. That is not
+  a guess; that is someone who had observed the real protocol.
+- `readStatus()` is **correctly named**. The payload is ignored and the reply _is_
+  a status frame, so sending `MEAS:CURR?` was just a poke.
+- `parseUDPMessage` returning the string unchanged is defensible — the reply is a
+  display-oriented fixed-width string.
+
+What it lacked was field parsing and a `close()`. The protocol understanding was
+sound.
+
+#### What this means for the library
+
+- **UDP cannot replace TCP.** It cannot set a voltage, enable an output,
+  configure protection or read the error queue. It is monitor-only.
+- **It is genuinely attractive for polling.** One datagram returns output state,
+  voltage and current **atomically** — which is exactly the coherent-measurement
+  primitive `measure()` needs three TCP round trips to approximate.
+- **There is no correlation problem on UDP here**, because content is ignored and
+  every reply is a complete snapshot. Any reply is a valid current reading, so an
+  out-of-order or duplicated datagram is harmless. This is the one respect in
+  which Cameron's instinct about UDP was right, and my "UDP makes correlation
+  worse" argument does not apply to a stateless status poll.
+- Worth adding as an opt-in monitoring path alongside TCP control. Tracked as
+  follow-up work, not for 1.0.0-alpha.1.
 
 ### DANGER: probing this firmware with unsupported commands wedges it
 
