@@ -115,6 +115,42 @@ if (reading.mode === 'CC') console.log('current limited');
 Use this for poll loops. `measureVoltage()` / `measureCurrent()` remain for when
 you genuinely only need one.
 
+### Measurements use UDP by default
+
+The supply exposes an **undocumented UDP service on port 9221** that returns
+output state, measured voltage and measured current in a **single datagram**,
+all sampled at one instant. `measure()` uses it by default, because over SCPI
+the same reading costs two or three round trips that each sample a different
+moment.
+
+It is also the one place where UDP's lack of ordering guarantees costs nothing:
+the request carries no information — the device ignores the payload entirely —
+so every reply is a complete, self-contained snapshot. A reordered or duplicated
+datagram is harmless, because there is nothing to correlate it against.
+
+```ts
+const psu = await connect({ host });
+psu.usingUdp; // true when the device answered the probe
+
+const { voltage, current, power, mode } = await psu.measure({ mode: true });
+// mode comes free over UDP; on the SCPI path it costs an extra round trip
+```
+
+Availability is probed once at connect. If the device does not answer — a
+different model, older firmware, a firewall in the way — it falls back to SCPI
+silently and `usingUdp` reports `false`. A datagram lost mid-session also falls
+back for that call. Opt out entirely with:
+
+```ts
+const psu = await connect({ host, udp: false });
+```
+
+**This channel is monitor-only.** It cannot set a voltage, enable an output or
+read the error queue. All control goes over SCPI regardless.
+
+Documented nowhere by B&K — the frame layout was established by probing an
+XLN6024 on firmware 1.20. See `plans/xln-modernization.md`.
+
 ### Setters are verified by default
 
 Set commands produce no reply, and this firmware has **no `*OPC?`** — so a
@@ -166,8 +202,8 @@ Every method is async. Getters return `number` or `boolean`, never strings.
 **Identity and reset** — `identity`, `spec`, `getIdentity()`, `reset()`,
 `clearStatus()`, `saveToMemory(slot)`, `recallFromMemory(slot)`, `abort()`
 
-**Measurement** — `measure()`, `measureVoltage()`, `measureCurrent()`,
-`measurePower()`, `fetchVoltage()`, `fetchCurrent()`
+**Measurement** — `measure()`, `usingUdp`, `measureVoltage()`,
+`measureCurrent()`, `measurePower()`, `fetchVoltage()`, `fetchCurrent()`
 
 **Setpoints** — `getVoltage()`/`setVoltage(v)`, `getCurrent()`/`setCurrent(a)`
 

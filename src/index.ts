@@ -35,6 +35,14 @@ export {
 } from './transport.js';
 
 export {
+  UdpStatusChannel,
+  XLN_UDP_PORT,
+  parseUdpStatus,
+  type UdpStatus,
+  type UdpStatusOptions,
+} from './udp.js';
+
+export {
   XLNError,
   XLNConnectionError,
   XLNTimeoutError,

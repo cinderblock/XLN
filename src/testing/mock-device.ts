@@ -13,6 +13,7 @@
  */
 
 import { createServer, type Server, type Socket } from 'node:net';
+import { createSocket, type Socket as UdpSocket } from 'node:dgram';
 import { once } from 'node:events';
 
 export interface MockDeviceOptions {
@@ -45,6 +46,21 @@ export interface MockDeviceOptions {
    * Overrides {@link responseDelay} for that index.
    */
   replyDelay?: (index: number) => number | undefined;
+  /**
+   * Also serve the undocumented UDP status channel on port 9221.
+   *
+   * Off by default so tests that only care about SCPI are not slowed by the
+   * availability probe, but **real hardware does have it** (verified on an
+   * XLN6024, firmware 1.20), so turn it on for anything measurement-related.
+   */
+  udp?: boolean;
+  /**
+   * Minimum datagram size the UDP channel will answer.
+   *
+   * Real hardware ignores the payload content but is length-sensitive. Set
+   * absurdly high to simulate a unit that does not speak UDP at all.
+   */
+  udpMinSize?: number;
 }
 
 interface MemorySlot {
@@ -54,6 +70,7 @@ interface MemorySlot {
 
 export class MockDevice {
   private readonly server: Server;
+  private udpSocket: UdpSocket | undefined;
   private readonly sockets = new Set<Socket>();
   private readonly options: MockDeviceOptions;
 
@@ -145,7 +162,71 @@ export class MockDevice {
 
     server.listen(port, '127.0.0.1');
     await once(server, 'listening');
+
+    if (options.udp) {
+      const udp = createSocket({ type: 'udp4', reuseAddr: true });
+      udp.on('message', (message, remote) => {
+        // Real hardware ignores the payload content entirely and only answers
+        // datagrams of an accepted size.
+        if (message.length < (options.udpMinSize ?? 1)) return;
+        const frame = Buffer.from(device.statusFrame(), 'latin1');
+        udp.send(frame, remote.port, remote.address, () => undefined);
+      });
+      udp.on('error', () => undefined);
+      udp.bind(0, '127.0.0.1');
+      await once(udp, 'listening');
+      udp.unref();
+      device.udpSocket = udp;
+    }
+
     return device;
+  }
+
+  /** Stop only the UDP responder, leaving SCPI up. */
+  async stopUdp(): Promise<void> {
+    if (!this.udpSocket) return;
+    const socket = this.udpSocket;
+    this.udpSocket = undefined;
+    await new Promise<void>((resolve) => {
+      try {
+        socket.close(() => {
+          resolve();
+        });
+      } catch {
+        resolve();
+      }
+    });
+  }
+
+  /** UDP status port, or undefined when the UDP channel is disabled. */
+  get udpPort(): number | undefined {
+    const address = this.udpSocket?.address();
+    return typeof address === 'object' ? address.port : undefined;
+  }
+
+  /**
+   * Build the 96-byte fixed-width status frame the real device sends.
+   *
+   * Layout observed on an XLN6024 (fw 1.20): state at offset 16, measured
+   * volts at 35 followed by `V`, measured amps at 45 followed by `A`.
+   */
+  statusFrame(): string {
+    const state = this.output ? this.regulationMode : 'OFF';
+    const volts = (this.output ? this.voltage : 0).toFixed(3);
+    const amps = (this.output ? this.current : 0).toFixed(3);
+    const frame = Array.from({ length: 96 }, () => ' ');
+    const put = (text: string, at: number): void => {
+      for (let i = 0; i < text.length; i++) {
+        const char = text[i];
+        if (char !== undefined) frame[at + i] = char;
+      }
+    };
+    put(state, 16);
+    put(volts, 35);
+    put('V', 41);
+    put(amps, 45);
+    put('A', 51);
+    return frame.join('');
   }
 
   /** The ephemeral port the mock is listening on. */
@@ -160,6 +241,14 @@ export class MockDevice {
   async stop(): Promise<void> {
     for (const socket of this.sockets) socket.destroy();
     this.sockets.clear();
+    if (this.udpSocket) {
+      try {
+        this.udpSocket.close();
+      } catch {
+        // Already closed.
+      }
+      this.udpSocket = undefined;
+    }
     await new Promise<void>((resolve) =>
       this.server.close(() => {
         resolve();

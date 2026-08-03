@@ -24,7 +24,8 @@ afterEach(async () => {
 
 async function open(): Promise<{ device: MockDevice; psu: XLN }> {
   device = await MockDevice.start();
-  psu = await connect({ host: '127.0.0.1', port: device.port });
+  // SCPI path specifically; the UDP path is covered in udp.test.ts.
+  psu = await connect({ host: '127.0.0.1', port: device.port, udp: false });
   device.voltage = 12;
   device.current = 2;
   device.output = true;

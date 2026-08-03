@@ -46,6 +46,13 @@ Complete rewrite in TypeScript. The API is promise-based and breaking; see
   between them, which on a transient load yields a V×I product that was never
   simultaneously true. `measurePower()` now uses it. Reported by the XLN-Control
   agent against `1.0.0-alpha.1`.
+- **UDP status channel**, used by `measure()` by default. The supply has an
+  undocumented UDP service on port 9221 that returns output state, voltage and
+  current in one datagram sampled at a single instant, versus two or three SCPI
+  round trips that each sample a different moment. Regulation mode comes free.
+  Probed once at connect; falls back to SCPI silently if unavailable, and
+  `udp: false` opts out. Monitor-only — all control stays on SCPI.
+  Exposed directly as `UdpStatusChannel` / `parseUdpStatus`.
 - `xln/testing` — the mock device the library's own suite runs against, so
   consumers can test without hardware. Reproduces fragmented replies, NUL
   padding, alternate terminators, coalesced replies, and late replies that

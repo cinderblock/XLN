@@ -19,7 +19,14 @@ async function open(
   options: Partial<XLNOptions> = {},
 ): Promise<{ device: MockDevice; psu: XLN }> {
   device = await MockDevice.start(deviceOptions);
-  psu = await connect({ host: '127.0.0.1', port: device.port, ...options });
+  // The mock does not serve UDP unless asked, so skip the probe rather than
+  // paying its timeout in every test. UDP has its own suite.
+  psu = await connect({
+    host: '127.0.0.1',
+    port: device.port,
+    udp: false,
+    ...options,
+  });
   return { device, psu };
 }
 
@@ -36,7 +43,7 @@ describe('connect', () => {
   it('clears a stale error queue so it is not blamed on the first command', async () => {
     device = await MockDevice.start();
     device.pushError(-2);
-    psu = await connect({ host: '127.0.0.1', port: device.port });
+    psu = await connect({ host: '127.0.0.1', port: device.port, udp: false });
     // Had *CLS not run, this would throw the leftover -2.
     await expect(psu.setVoltage(5)).resolves.toBeUndefined();
   });
@@ -308,6 +315,7 @@ describe('resource management', () => {
       await using supply = await connect({
         host: '127.0.0.1',
         port: probe.port,
+        udp: false,
       });
       await supply.setVoltage(12);
     }

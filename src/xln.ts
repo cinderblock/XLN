@@ -30,6 +30,7 @@ import {
   type ScpiChannel,
   type ScpiSocketOptions,
 } from './transport.js';
+import { UdpStatusChannel } from './udp.js';
 
 const ERROR_QUERY = 'SYSTEM:ERROR?';
 
@@ -89,6 +90,25 @@ export interface XLNOptions extends ScpiSocketOptions {
    * Only needed if `*IDN?` reports something this library does not recognize.
    */
   model?: string;
+  /**
+   * Use the UDP status channel for {@link XLN.measure}. Defaults to `true`.
+   *
+   * The supply exposes an undocumented UDP service on port 9221 that returns
+   * output state, measured voltage and measured current in **one datagram**,
+   * sampled at the same instant. Over SCPI the same reading costs two or three
+   * round trips that each sample a different moment, which matters on a
+   * transient load.
+   *
+   * Availability is probed once at connect. If the device does not answer —
+   * different model, older firmware, a firewall between you and it — this
+   * falls back to SCPI silently and {@link XLN.usingUdp} reports `false`. Set
+   * `false` to skip the probe and always use SCPI.
+   *
+   * Only affects measurement. All control goes over SCPI regardless.
+   */
+  udp?: boolean;
+  /** UDP status port. Defaults to `9221`. */
+  udpPort?: number;
 }
 
 /**
@@ -119,16 +139,19 @@ export class XLN {
 
   private readonly autoCheckErrors: boolean;
   private readonly validateRanges: boolean;
+  private readonly udp: UdpStatusChannel | undefined;
 
   private constructor(
     socket: ScpiSocket,
     identity: Identity,
     spec: XLNModelSpec | undefined,
     options: XLNOptions,
+    udp: UdpStatusChannel | undefined,
   ) {
     this.socket = socket;
     this.identity = identity;
     this.spec = spec;
+    this.udp = udp;
     this.autoCheckErrors = options.autoCheckErrors ?? true;
     this.validateRanges = options.validateRanges ?? true;
 
@@ -167,15 +190,42 @@ export class XLN {
       const identity = parseIdentity(await socket.query('*IDN?'));
       const spec = lookupModel(options.model ?? identity.model);
 
-      return new XLN(socket, identity, spec, options);
+      // Probe the UDP status channel once. It is undocumented and not present
+      // on every unit, so a failure here is not an error — it just means
+      // measurements go over SCPI.
+      let udp: UdpStatusChannel | undefined;
+      if (options.udp ?? true) {
+        const channel = new UdpStatusChannel({
+          host: options.host,
+          ...(options.udpPort === undefined ? {} : { port: options.udpPort }),
+        });
+        if (await channel.available()) {
+          udp = channel;
+        } else {
+          channel.close();
+        }
+      }
+
+      return new XLN(socket, identity, spec, options, udp);
     } catch (error) {
       await socket.close();
       throw error;
     }
   }
 
+  /**
+   * Whether measurements are coming from the UDP status channel.
+   *
+   * `false` means the device did not answer the probe at connect, or `udp` was
+   * disabled, and {@link measure} is using SCPI.
+   */
+  get usingUdp(): boolean {
+    return this.udp !== undefined;
+  }
+
   /** Close the connection. Does **not** change the output state. */
   async close(): Promise<void> {
+    this.udp?.close();
     await this.socket.close();
   }
 
@@ -241,13 +291,40 @@ export class XLN {
    * (inrush, a switching supply, the instant the output is enabled) that
    * produces a V×I product that was never simultaneously true.
    *
-   * This runs both queries inside a single transaction, so nothing can
-   * interleave and the gap is one round trip — the closest the wire allows.
+   * By default this uses the **UDP status channel**, which returns everything
+   * in a single datagram sampled at one instant — see {@link XLNOptions.udp}.
+   * When UDP is unavailable it falls back to SCPI, running both queries inside
+   * one transaction so nothing can interleave and the gap is one round trip,
+   * the closest that path allows. {@link usingUdp} tells you which is active.
    *
-   * @param options.mode Also read the CV/CC regulation mode. Costs a third
-   * round trip, so it is opt-in.
+   * @param options.mode Also report the CV/CC regulation mode. Free over UDP;
+   * costs a third round trip on the SCPI path, so it stays opt-in.
    */
   async measure(options: MeasureOptions = {}): Promise<Measurement> {
+    // Prefer UDP: one datagram carries state, volts and amps sampled at the
+    // same instant, where SCPI needs two or three round trips that each sample
+    // a different moment. Regulation mode comes free rather than costing an
+    // extra exchange.
+    if (this.udp) {
+      try {
+        const status = await this.udp.poll();
+        return {
+          voltage: status.voltage,
+          current: status.current,
+          power: status.power,
+          timestamp: status.timestamp,
+          // The frame reports OFF rather than a loop when the output is
+          // disabled; that is not a regulation mode, so it is omitted.
+          ...(options.mode && status.state !== 'OFF'
+            ? { mode: status.state }
+            : {}),
+        };
+      } catch {
+        // A dropped datagram must not fail the measurement — fall through to
+        // SCPI, which is always available.
+      }
+    }
+
     return this.socket.transaction(async (channel: ScpiChannel) => {
       // Timestamped at the start of the exchange, not the end, so the value
       // marks when the readings began rather than when parsing finished.

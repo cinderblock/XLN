@@ -211,6 +211,7 @@ describe('auto-reconnect', () => {
     psu = await connect({
       host: '127.0.0.1',
       port,
+      udp: false,
       autoReconnect: { minDelay: 20 },
     });
 

@@ -35,7 +35,11 @@ describe.skipIf(!built)('published artifact', () => {
     const { connect, XLNRangeError } = (await import(url)) as XlnModule;
 
     device = await MockDevice.start();
-    const psu = await connect({ host: '127.0.0.1', port: device.port });
+    const psu = await connect({
+      host: '127.0.0.1',
+      port: device.port,
+      udp: false,
+    });
 
     expect(psu.identity.model).toBe('XLN6024-GL');
     await psu.setVoltage(12);
@@ -53,6 +57,7 @@ describe.skipIf(!built)('published artifact', () => {
     const psu = await bundle.connect({
       host: '127.0.0.1',
       port: device.port,
+      udp: false,
     });
 
     expect(psu.identity.model).toBe('XLN6024-GL');
