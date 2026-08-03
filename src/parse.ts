@@ -15,7 +15,18 @@ export interface Identity {
   readonly manufacturer: string;
   readonly model: string;
   readonly serial: string;
+  /**
+   * Firmware version, e.g. `1.20`.
+   *
+   * Note the device sends a **fifth** field after this one — a literal `0` on
+   * every unit seen so far. The manual's `*IDN?` table describes field 4 as
+   * "firmware type, & version", which reads like one field but is really two;
+   * its `CIDN?` entry gives the template explicitly as
+   * `B&K PRECISION,XLN15010,SN#,fw_version,0`. See {@link fields} for the rest.
+   */
   readonly firmware: string;
+  /** Every comma-separated field, trimmed. Nothing is discarded. */
+  readonly fields: readonly string[];
   /** The unparsed response, for when the split above gets it wrong. */
   readonly raw: string;
 }
@@ -29,13 +40,16 @@ export interface DeviceErrorInfo {
 /**
  * Which loop the supply is currently regulating on.
  *
- * Deliberately an *open* union. The manual only ever says "(CV or CC)" and
- * never states the encoding, so an unrecognized reply is passed through
- * (uppercased) rather than throwing — a monitoring loop should degrade, not
- * die, on a value we failed to anticipate. Compare against `'CV'`/`'CC'` and
- * keep an else-branch.
+ * Deliberately an *open* union. The manual only ever says "(CV or CC)", but
+ * real hardware returns **`OFF`** whenever the output is disabled — which is
+ * the most common state a monitoring loop will see, and is not a regulation
+ * loop at all. Anything unrecognized is passed through uppercased rather than
+ * throwing, because a monitoring loop should degrade, not die, on a value we
+ * failed to anticipate. Compare against the known values and keep an
+ * else-branch.
  */
-export type RegulationMode = 'CV' | 'CC' | (string & Record<never, never>);
+export type RegulationMode =
+  'CV' | 'CC' | 'OFF' | (string & Record<never, never>);
 
 /**
  * Error codes from the XLN manual's event table.
@@ -123,10 +137,8 @@ export function parseIdentity(response: string): Identity {
     manufacturer: parts[0] ?? '',
     model: parts[1] ?? '',
     serial: parts[2] ?? '',
-    // The manual describes the last field as "firmware type, & version" — it
-    // can itself contain commas, so everything after the third field is joined
-    // back together rather than truncated.
-    firmware: parts.slice(3).join(', '),
+    firmware: parts[3] ?? '',
+    fields: parts,
     raw,
   };
 }

@@ -31,10 +31,10 @@ Complete rewrite in TypeScript. The API is promise-based and breaking; see
 
 ### Removed
 
-- **`udpXLN`.** No B&K manual revision (2010, 2013, 2018) documents UDP,
-  port 9221, or any discovery protocol; 9221 is an Aim-TTi convention and TCP
-  even there. Its `parseUDPMessage` was an identity stub. There is no
-  vendor-supported discovery mechanism for these supplies.
+- **`udpXLN`.** Replaced by `UdpStatusChannel` (see Added). The port is real —
+  my initial removal note claimed it was not, which was wrong and is retracted.
+  It is a monitor-only status channel, not a control or discovery protocol, so
+  a class shaped like a command interface was still the wrong abstraction.
 - `tcpXLN` — replaced by `XLN` / `connect()`.
 - The gulp + babel build.
 

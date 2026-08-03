@@ -794,6 +794,21 @@ export class XLN {
    * Send a raw command that produces no response.
    *
    * Still goes through the queue and the `autoCheckErrors` check.
+   *
+   * ⚠️ **Sending a command this firmware does not recognize can take the
+   * instrument off the network until someone power-cycles it.** Observed twice
+   * on an XLN6024 (fw 1.20): after a handful of unsupported forms — `OUTP?`,
+   * `OUT?`, a `;` compound, `*OPC?`, `SOURCE:VOLTAGE? MAX` — the unit stopped
+   * accepting TCP on ports 80, 5024 and 5025 while still answering ping, and
+   * did not recover on its own.
+   *
+   * Worse, `autoCheckErrors` cannot save you: an unsupported command returns
+   * **silence**, not an error, so the follow-up `SYSTEM:ERROR?` times out
+   * rather than reporting `-1`.
+   *
+   * Prefer the typed methods, whose command forms are all verified against
+   * real hardware. If you must use this, verify the command against the manual
+   * for your firmware revision first.
    */
   async command(command: string, options?: CommandOptions): Promise<void> {
     if (!this.autoCheckErrors) {
@@ -809,7 +824,13 @@ export class XLN {
     }, options);
   }
 
-  /** Send a raw query and return the device's reply verbatim. */
+  /**
+   * Send a raw query and return the device's reply verbatim.
+   *
+   * ⚠️ Same hazard as {@link command} — an unrecognized query can wedge the
+   * instrument's network stack until it is power-cycled. Prefer the typed
+   * methods.
+   */
   async query(command: string, options?: CommandOptions): Promise<string> {
     return this.socket.query(command, options);
   }

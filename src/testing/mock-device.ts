@@ -17,7 +17,13 @@ import { createSocket, type Socket as UdpSocket } from 'node:dgram';
 import { once } from 'node:events';
 
 export interface MockDeviceOptions {
-  /** Response to `*IDN?`. Defaults to an XLN6024-GL identity. */
+  /**
+   * Response to `*IDN?`.
+   *
+   * Defaults to the **exact** string an XLN6024 on firmware 1.20 returns —
+   * note no spaces after the commas, no `-GL` suffix even on an Ethernet
+   * unit, and a fifth field after the firmware version.
+   */
   identity?: string;
   /** Line terminator the mock appends to replies. Defaults to `'\r\n'`. */
   terminator?: string;
@@ -362,10 +368,7 @@ export class MockDevice {
   private queryResponse(head: string): string | undefined {
     switch (head) {
       case '*IDN?':
-        return (
-          this.options.identity ??
-          'B&K Precision, XLN6024-GL, 123A45678, 1.00-1.02'
-        );
+        return this.options.identity ?? 'BK PRECISION,XLN6024,276G11128,1.20,0';
       case 'SYSTEM:ERROR?': {
         const code = this.errors.shift() ?? 0;
         return String(code);

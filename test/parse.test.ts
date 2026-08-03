@@ -56,20 +56,35 @@ describe('parseBoolean', () => {
 });
 
 describe('parseIdentity', () => {
-  it('splits the four documented fields', () => {
-    const identity = parseIdentity(
-      'B&K Precision, XLN6024-GL, 123A45678, 1.00-1.02',
-    );
-    expect(identity.manufacturer).toBe('B&K Precision');
-    expect(identity.model).toBe('XLN6024-GL');
-    expect(identity.serial).toBe('123A45678');
-    expect(identity.firmware).toBe('1.00-1.02');
+  it('parses the exact string real hardware returns', () => {
+    // Captured from an XLN6024 on firmware 1.20. Note: no spaces after the
+    // commas, no -GL suffix despite being an Ethernet unit, and a FIFTH field.
+    const identity = parseIdentity('BK PRECISION,XLN6024,276G11128,1.20,0');
+    expect(identity.manufacturer).toBe('BK PRECISION');
+    expect(identity.model).toBe('XLN6024');
+    expect(identity.serial).toBe('276G11128');
+    expect(identity.firmware).toBe('1.20');
   });
 
-  it('keeps commas inside the firmware field', () => {
-    // The manual describes the last field as "firmware type, & version".
-    const identity = parseIdentity('B&K, XLN6024, SN1, type A, v1.02');
-    expect(identity.firmware).toBe('type A, v1.02');
+  it('treats the trailing field as separate, not part of the version', () => {
+    // The *IDN? table calls field 4 "firmware type, & version", which reads
+    // like one field but is two — the manual's own CIDN? entry gives the
+    // template as `...,fw_version,0`. Joining them would report "1.20, 0".
+    const identity = parseIdentity('BK PRECISION,XLN6024,276G11128,1.20,0');
+    expect(identity.firmware).toBe('1.20');
+    expect(identity.fields).toEqual([
+      'BK PRECISION',
+      'XLN6024',
+      '276G11128',
+      '1.20',
+      '0',
+    ]);
+  });
+
+  it('tolerates spaces after commas', () => {
+    const identity = parseIdentity('B&K Precision, XLN6024-GL, SN1, 1.00');
+    expect(identity.manufacturer).toBe('B&K Precision');
+    expect(identity.model).toBe('XLN6024-GL');
   });
 
   it('rejects a response with no commas', () => {

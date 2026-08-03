@@ -33,11 +33,23 @@ async function open(
 describe('connect', () => {
   it('identifies the device and resolves its model spec', async () => {
     const { psu } = await open();
-    expect(psu.identity.manufacturer).toBe('B&K Precision');
-    expect(psu.identity.model).toBe('XLN6024-GL');
-    // The -GL (Ethernet) suffix must still resolve to the base model.
+    expect(psu.identity.manufacturer).toBe('BK PRECISION');
+    expect(psu.identity.model).toBe('XLN6024');
+    expect(psu.identity.serial).toBe('276G11128');
+    // The trailing field is not part of the version.
+    expect(psu.identity.firmware).toBe('1.20');
     expect(psu.spec?.model).toBe('XLN6024');
     expect(psu.spec?.voltage.max).toBe(60);
+  });
+
+  it('resolves a -GL model name to the base model', async () => {
+    // The bench unit reports no suffix, but -GL is what the catalogue calls
+    // the Ethernet variants, so a unit reporting it must still resolve.
+    const { psu } = await open({
+      identity: 'B&K Precision, XLN6024-GL, SN1, 1.00',
+    });
+    expect(psu.identity.model).toBe('XLN6024-GL');
+    expect(psu.spec?.model).toBe('XLN6024');
   });
 
   it('clears a stale error queue so it is not blamed on the first command', async () => {

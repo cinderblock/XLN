@@ -20,7 +20,7 @@ import { connect } from 'xln';
 
 await using psu = await connect({ host: '192.168.1.50' });
 
-console.log(psu.identity.model); // 'XLN6024-GL'
+console.log(psu.identity.model); // 'XLN6024'
 
 await psu.setVoltage(12); // volts
 await psu.setCurrent(1); // amps
@@ -100,14 +100,14 @@ per-request another caller's query can land between them. On a transient load �
 inrush, a switching supply, the instant the output is enabled — multiplying
 those two readings gives a power figure that was never simultaneously true.
 
-`measure()` takes both inside one transaction, so nothing interleaves and the
-gap is as small as the wire allows:
+`measure()` solves this. By default it reads everything from a single UDP
+datagram sampled at one instant (see below); where UDP is unavailable it falls
+back to taking both queries inside one SCPI transaction, so nothing interleaves
+and the gap is one round trip.
 
 ```ts
 const { voltage, current, power, timestamp } = await psu.measure();
 
-// Regulation mode too, at the cost of a third round trip in the same
-// transaction:
 const reading = await psu.measure({ mode: true });
 if (reading.mode === 'CC') console.log('current limited');
 ```
@@ -229,6 +229,16 @@ voltage/current/output accessors, `recallFactoryDefaults()`
 
 **Raw access** — `command(cmd, opts?)` for a write, `query(cmd, opts?)` for a
 query, and `psu.socket` for the underlying `ScpiSocket`.
+
+> ⚠️ **Sending a command this firmware does not recognize can take the
+> instrument off the network until it is power-cycled.** Observed twice on an
+> XLN6024 (fw 1.20): after a few unsupported forms — `OUTP?`, `OUT?`, a `;`
+> compound, `*OPC?`, `SOURCE:VOLTAGE? MAX` — it stopped accepting TCP on ports
+> 80, 5024 and 5025 while still answering ping, and did not recover on its own.
+> `autoCheckErrors` cannot protect you either: an unsupported command returns
+> silence, so the follow-up `SYSTEM:ERROR?` times out rather than reporting an
+> error. Prefer the typed methods, whose command forms are all verified against
+> real hardware.
 
 ### `getStatus()`
 
@@ -353,11 +363,13 @@ Three changes deserve attention:
    you used it as an on/off check, you want `getOutput()` now.
 2. **Slew rates are V/ms and A/ms.** If you passed a V/s figure it was ~1000×
    off; the library now rejects it with `XLNRangeError` instead of forwarding it.
-3. **`udpXLN` is gone.** No B&K manual revision — 2010, 2013 or 2018 — mentions
-   UDP, port 9221, or any discovery protocol. Port 9221 is an Aim-TTi convention,
-   and TCP even there. The class's `parseUDPMessage` was an identity stub that
-   returned its input unchanged; it never worked. There is **no vendor-supported
-   discovery mechanism** for these supplies — configure the host explicitly.
+3. **`udpXLN` is replaced by `UdpStatusChannel`**, and `measure()` uses it
+   automatically. UDP 9221 turned out to be real — it is the transport behind
+   the web UI's Java status display. It is **monitor-only** and **not**
+   discovery (it ignores broadcast), so there is still no vendor-supported way
+   to find a supply; configure the host explicitly. The old class was shaped
+   like a command interface, which it never was, and its `parseUDPMessage` left
+   the fixed-width frame unparsed.
 
 Everything else keeps a recognizable name, so porting is mechanical.
 

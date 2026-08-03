@@ -36,7 +36,7 @@ describe('framing', () => {
     // on the first packet, truncating anything that arrived later.
     const { socket } = await open({ fragmentResponses: true });
     await expect(socket.query('*IDN?')).resolves.toBe(
-      'B&K Precision, XLN6024-GL, 123A45678, 1.00-1.02',
+      'BK PRECISION,XLN6024,276G11128,1.20,0',
     );
   });
 

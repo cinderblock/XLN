@@ -41,7 +41,7 @@ describe.skipIf(!built)('published artifact', () => {
       udp: false,
     });
 
-    expect(psu.identity.model).toBe('XLN6024-GL');
+    expect(psu.identity.model).toBe('XLN6024');
     await psu.setVoltage(12);
     expect(await psu.getVoltage()).toBe(12);
     // Errors thrown by the bundle must be catchable with the bundle's classes.
@@ -60,7 +60,7 @@ describe.skipIf(!built)('published artifact', () => {
       udp: false,
     });
 
-    expect(psu.identity.model).toBe('XLN6024-GL');
+    expect(psu.identity.model).toBe('XLN6024');
     await psu.setOutput(true);
     expect(await psu.getOutput()).toBe(true);
     await psu.close();
