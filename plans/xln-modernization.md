@@ -214,10 +214,12 @@ code throws. Costs a round trip; users who need throughput set it false.
 - [x] Packaging validated — publint + attw green across node10, node16 CJS,
       node16 ESM and bundler resolution; `npm publish --dry-run --tag next` clean
 - [ ] **Run probe against real hardware** and fold answers into tests
-- [ ] **Release `1.0.0-alpha.1` to `next`** — via GitHub Actions only (see
-      "Release process" below). Needs the repo pushed, an `npm` GitHub
-      environment, and an `NPM_TOKEN` secret. **Must land on `next`, never
-      `latest`** — 0.6.4 stays `latest` until the alpha has run on hardware.
+- [x] **Released `1.0.0-alpha.1` to `next`** (2026-08-03). Published by GitHub
+      Actions via npm trusted publishing — no token involved. Verified on the
+      registry: `dist-tags` are `latest: 0.6.4`, `next: 1.0.0-alpha.1`, so a
+      bare `npm install xln` still gets 0.6.4. SLSA provenance attestation
+      present. Installed `xln@next` into a scratch project and drove it end to
+      end, including the `xln/testing` subpath export.
 
 ## Round 2: consumer feedback and follow-up decisions
 
