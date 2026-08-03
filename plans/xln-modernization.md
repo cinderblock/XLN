@@ -550,6 +550,50 @@ Observed failure signature, both times:
 - Still treat the device as single-session. That remains the manual's implication
   and the safe assumption, it just is not what caused these two failures.
 
+### Corroboration from two further research sweeps
+
+Two background agents finished after the `Display.class` decompile had already
+settled things. Both converged independently — and both independently proposed
+decompiling the applet as the decisive test, which is what the first agent did.
+
+Genuinely new:
+
+- **The manual pictures the applet running.** B&K's Web Control screenshot shows
+  the display panel reading `CV` on the upper line and `35.996 V   0.000 A`
+  below — the same three fields, same order, with the state showing a
+  regulation mode instead of `OFF`. That is documentary evidence for what the
+  state field does with the output on, short of confirming it on this unit.
+- **B&K's own PC software contains no UDP at all.** `Program Software.exe`
+  decompiles to a single Ethernet transport, `BKTWLab.BKEthernet`, doing
+  `myTcpClient.Connect(myIP, 5025)`. The strings `Udp`, `Dgram` and `9221`
+  appear zero times, in both the 2014 and 2023 builds. So the vendor's own
+  full-control client never touches UDP 9221 — control does not need it.
+- **Not a third-party module.** Every serial-to-Ethernet device server family
+  was checked (Lantronix 30718, Moxa 4800, Hi-Flying 48899, USR 1901, WIZnet
+  1460, Tibbo 65534, ZLAN 1092, Digi 2362, NetBurner 20034, Silex 60000, Sena
+  2002): none uses 9221, and all of them are broadcast-driven and key on a
+  magic byte string. Ours ignores payload content and ignores broadcast, which
+  is the opposite of a discovery responder. 9221 is unassigned at IANA and
+  absent from nmap-services and Rapid7 Recog.
+- **The Aim-TTi 9221 similarity is a coincidence.** Seven Aim-TTi manuals
+  confirm their 9221 is TCP-only; their sole UDP port is 111 for the RPC
+  portmapper. No corporate or OEM link to B&K exists. Do not repeat the
+  "Aim-TTi lineage" framing — the real explanation is Motech's applet.
+
+**The one residual uncertainty about writes.** B&K shipped an iOS app, `pwrApp`
+(Feb 2012), advertised as full monitoring **and control** of network XLN-GL
+supplies, with a "Legacy Firmware" toggle proving the LAN firmware protocol
+changed around that date. It is delisted and could not be examined, and it is a
+control client — so it cannot be ruled out on evidence that it writes over 9221. Counterweight: our frame carries three fields, nowhere near enough for
+pwrApp's feature set (setpoints, OVP/OCP, programs, graphing), so the natural
+split is UDP for the live monitor and TCP for everything else — exactly what
+the applet does.
+
+Practical effect: none. Read-only is supported on four independent legs (the
+manual scopes Java to "display"; the applet has no input path; the vendor's
+control software needs no UDP; and junk payloads never reach the SCPI parser).
+The library only ever reads from this channel anyway.
+
 ## Findings / gotchas discovered during implementation
 
 - **TypeScript 7.0.2 is `latest` but unusable here.** `typescript-eslint` 8.65 caps

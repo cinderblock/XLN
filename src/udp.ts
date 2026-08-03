@@ -67,9 +67,11 @@ export interface UdpStatus {
   /**
    * Output state as reported by the frame.
    *
-   * Observed as `OFF` with the output disabled. With the output enabled this
-   * is expected to carry the regulation mode (`CV`/`CC`), but that is
-   * **unverified** — hence the open type.
+   * Observed as `OFF` with the output disabled. With the output **enabled** it
+   * carries the regulation mode: B&K's own manual screenshots the Web Control
+   * page with this exact display panel reading `CV` above `35.996 V  0.000 A`
+   * — the same three fields in the same order. Not yet confirmed on this unit,
+   * so the type stays open.
    */
   readonly state: RegulationMode | 'OFF';
   /** Whether the output is on, derived from {@link state}. */
