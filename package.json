@@ -54,7 +54,11 @@
     "discover": "tsx scripts/discover.ts",
     "probe:udp": "tsx scripts/probe-udp.ts",
     "probe:udp:format": "tsx scripts/probe-udp-format.ts",
-    "probe:output": "tsx scripts/probe-output-on.ts"
+    "probe:output": "tsx scripts/probe-output-on.ts",
+    "probe:contention": "tsx scripts/probe-contention.ts",
+    "probe:contention:deep": "tsx scripts/probe-contention-deep.ts",
+    "probe:contention:writes": "tsx scripts/probe-contention-writes.ts",
+    "probe:monitor:live": "tsx scripts/probe-monitor-live.ts"
   },
   "repository": {
     "type": "git",
