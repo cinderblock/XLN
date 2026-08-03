@@ -228,9 +228,12 @@ describe('unsolicited data', () => {
   it('emits stray lines rather than letting them shift the stream', async () => {
     const { device, socket } = await open();
 
-    // Await the event rather than sleeping and hoping. A fixed 50 ms wait
-    // passed everywhere except a loaded macOS runner, which is exactly the
-    // kind of flake that erodes trust in a suite.
+    // Two separate races here, both invisible locally and both reproducible
+    // on a loaded macOS runner: a client connect() can resolve before the
+    // server has registered the socket, so emitting immediately would write
+    // to nobody; and asserting after a fixed sleep can miss the event.
+    await device.waitForConnection();
+
     const seen = nextUnsolicited(socket);
     device.emitUnsolicited('SPURIOUS');
     await expect(seen).resolves.toBe('SPURIOUS');

@@ -271,8 +271,43 @@ export class MockDevice {
     );
   }
 
-  /** Push an unsolicited line, to test that stray data cannot desynchronize. */
+  /** How many clients are currently connected. */
+  get connections(): number {
+    return this.sockets.size;
+  }
+
+  /**
+   * Wait until at least `n` clients are connected.
+   *
+   * A client's `connect()` can resolve before the server has run its
+   * `connection` handler, so a test that connects and immediately calls
+   * {@link emitUnsolicited} may find no sockets to write to. That race is
+   * invisible on a fast machine and reproducible on a loaded CI runner.
+   */
+  async waitForConnection(n = 1, ms = 5000): Promise<void> {
+    const deadline = Date.now() + ms;
+    while (this.sockets.size < n) {
+      if (Date.now() > deadline) {
+        throw new Error(
+          `timed out waiting for ${n} connection(s); have ${this.sockets.size}`,
+        );
+      }
+      await new Promise((resolve) => setTimeout(resolve, 5));
+    }
+  }
+
+  /**
+   * Push an unsolicited line, to test that stray data cannot desynchronize.
+   *
+   * Throws rather than silently doing nothing when no client is connected — a
+   * no-op here leaves a test waiting on an event that can never arrive.
+   */
   emitUnsolicited(text: string): void {
+    if (this.sockets.size === 0) {
+      throw new Error(
+        'emitUnsolicited: no client connected. Await waitForConnection() first.',
+      );
+    }
     for (const socket of this.sockets) {
       socket.write(text + (this.options.terminator ?? '\r\n'));
     }
