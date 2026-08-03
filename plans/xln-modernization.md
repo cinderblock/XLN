@@ -308,33 +308,56 @@ The correlation issue is also already solved: strict one-in-flight serialization
 with a test firing five concurrent queries that asserts each caller gets its own
 answer.
 
-### DANGER: a second TCP connection can wedge the instrument
+### DANGER: probing this firmware with unsupported commands wedges it
 
-Opening a second simultaneous connection to port 5025 caused the device to
-`ECONNRESET` the new session — and then **all TCP services died**. Ports 80, 5024
-and 5025 all stopped accepting connections while the unit still answered ICMP
-ping. It did not recover on its own after 2.5 minutes of polling.
+**Corrected 2026-08-02. My first diagnosis was wrong and is retracted.**
 
-Contributing factor: the probe script crashed on the unhandled `ECONNRESET` and
-left its primary socket open, so the device may have been holding a stale session.
-Either way the conclusion is the same and it is stronger than "assume
-single-session":
+Originally I blamed a second simultaneous TCP connection, because that is what
+the first probe run did immediately before the unit died. On the second run the
+second-connection test was **skipped entirely** and the unit wedged anyway. So a
+second connection is not the cause, or at least not the only one.
 
-**Never open a second connection. Always close cleanly. A crashed client can
-leave the instrument unreachable until it is power-cycled.**
+What both runs have in common is the probe's **unsupported-command block**:
 
-**Update (2026-08-02): a power cycle alone did not restore it.** After Cameron
-power-cycled, the unit answers ICMP ping but ports 80, 5024 and 5025 all still
-refuse. It is not elsewhere on the subnet either (full /24 sweep found nothing).
-Most likely the power cycle reset the front-panel remote interface selection away
-from Ethernet — the manual requires System Setting -> Remote Control -> Ethernet
-to be chosen manually, and with USB or GPIB selected the LAN stack can still hold
-an IP (answering ping) without starting the TCP servers. Needs checking at the
-front panel.
+    OUTP?                          -> silence
+    OUT?                           -> silence
+    SOURCE:VOLTAGE?;SOURCE:CURRENT?-> silence   (compound, ';' unsupported)
+    *OPC?                          -> silence
+    SOURCE:VOLTAGE? MAX            -> silence   (MIN/MAX param unsupported)
 
-This belongs in the README as a prominent warning, and it is worth considering
-whether the library should actively help — e.g. documenting `close()` in a
-`finally`, and the `await using` pattern.
+Every one of those returns silence rather than a device error, which already
+suggests the hand-rolled parser does not handle them gracefully. The working
+hypothesis is that one of them corrupts parser or network state, and the unit
+dies shortly after.
+
+**I have not narrowed down which command**, and deliberately stopped trying:
+isolating it costs one power cycle per candidate, and the answer would not change
+what the library does. Recorded as an open question instead.
+
+Observed failure signature, both times:
+
+1. All commands answer normally; the probe completes and prints results.
+2. `socket.end()` produces `ECONNRESET` — this device resets rather than closing
+   gracefully. (`ScpiSocket.close()` already swallows this; the probe script did
+   not, and crashed.)
+3. Shortly after, **all TCP services die** — ports 80, 5024 and 5025 stop
+   accepting. First occurrence: still answered ICMP. Second occurrence: fell off
+   the network entirely, no ARP response.
+4. Does not self-recover. Needs a power cycle.
+
+**Implications for the library:**
+
+- The library itself is not affected: it only ever sends the documented long-form
+  commands, all of which are confirmed working on firmware 1.20.
+- **The raw escape hatches (`command()` / `query()`) are genuinely dangerous on
+  this hardware.** Sending an unsupported command does not merely return an error
+  — it can take the instrument off the network until someone power-cycles it.
+  This needs a prominent warning in the README and on those methods.
+- Do not assume `autoCheckErrors` will catch a bad command. An unsupported form
+  produces silence, so the follow-up `SYSTEM:ERROR?` times out rather than
+  reporting `-1`.
+- Still treat the device as single-session. That remains the manual's implication
+  and the safe assumption, it just is not what caused these two failures.
 
 ## Findings / gotchas discovered during implementation
 
@@ -394,9 +417,14 @@ These are the items the manuals do not answer. All are ~20 minutes on the bench 
 5. **Boolean query encoding** — `0`/`1` or `OFF`/`ON`?
 6. **`STATUS?` encoding** — the manual says "three bytes"; hex string, decimal, or
    raw binary?
-7. Does the firmware accept a leading colon, and `;` compound commands, and more than
-   one simultaneous connection on 5025? (We assume no to all three and design
-   accordingly; confirming just tells us how much margin we have.)
+7. **ANSWERED by the probe.** Leading colon: accepted. `;` compound: rejected.
+   Short forms: `SOUR:VOLT?` accepted but `OUTP?` rejected. Multiple sessions:
+   still assumed unsafe (untested since the destructive test is now gated).
+
+8. **Which unsupported command actually wedges the unit?** Not narrowed down —
+   isolating it costs a power cycle per candidate and would not change the
+   library's behaviour. Candidates are `OUTP?`, `OUT?`, the `;` compound form,
+   `*OPC?`, and `SOURCE:VOLTAGE? MAX`.
 
 **Which XLN model do you have?** It determines the limit table entry the smoke test
 range-checks against. `*IDN?` will tell us during the probe run.
