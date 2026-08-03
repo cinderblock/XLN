@@ -57,13 +57,19 @@ transport layer and a command set that matches the actual device manual.
    prerelease version (`1.0.0-alpha.1`) goes to `next`, a plain version goes to
    `latest`. `workflow_dispatch` allows overriding the tag by hand.
 
-One-time repo setup still required:
+One-time setup still required — **no secrets involved**. Publishing uses npm
+**trusted publishing** (OIDC), so there is no `NPM_TOKEN` anywhere:
 
-- A GitHub **environment named `npm`** (the release job declares
-  `environment: npm`; the job fails without it).
-- An **`NPM_TOKEN`** secret in that environment — an npm automation token with
-  publish rights on `xln`.
-- The workflow already requests `id-token: write`, which provenance needs.
+- On npmjs.com, under the `xln` package's _Settings → Trusted publisher_: choose
+  GitHub Actions, organization `cinderblock`, repository `XLN`, workflow
+  filename `release.yml`. Leave the environment blank (the job declares none).
+- The workflow already requests `id-token: write`, which is what npm exchanges
+  for a short-lived credential. Provenance is then automatic, so `--provenance`
+  is not passed explicitly.
+- The trust is bound to the workflow **filename**. Renaming `release.yml` breaks
+  publishing until the npm setting is changed to match.
+- npm >= 11.5.1 is required; the job upgrades npm explicitly so a Node image
+  update cannot silently regress it.
 
 ## Protocol research findings
 

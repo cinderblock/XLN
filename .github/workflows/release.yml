@@ -18,10 +18,10 @@ permissions:
 jobs:
   publish:
     runs-on: ubuntu-latest
-    environment: npm
     permissions:
       contents: read
-      # Required for npm provenance attestation.
+      # Trusted publishing: npm exchanges this OIDC token for short-lived
+      # credentials. There is no NPM_TOKEN and no secret of any kind.
       id-token: write
 
     steps:
@@ -31,12 +31,20 @@ jobs:
         with:
           bun-version: latest
 
-      # Dependencies come from Bun, but the publish itself goes through npm:
-      # provenance attestation is an npm feature and needs npm >= 9.5.
+      # Dependencies come from Bun, but publishing goes through npm — trusted
+      # publishing and provenance attestation are both npm features.
       - uses: actions/setup-node@v7
         with:
           node-version: '24'
           registry-url: https://registry.npmjs.org
+
+      # Trusted publishing needs npm >= 11.5.1. Node 24 ships something recent
+      # enough today, but pinning the floor here means a Node image update can
+      # never silently regress it.
+      - name: Ensure npm supports trusted publishing
+        run: |
+          npm install -g npm@latest
+          npm --version
 
       - run: bun install --frozen-lockfile
       - run: bun run build
@@ -69,6 +77,8 @@ jobs:
             exit 1
           fi
 
-      - run: npm publish --provenance --access public --tag ${{ steps.disttag.outputs.tag }}
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+      # No NODE_AUTH_TOKEN. npm detects the OIDC token from the id-token
+      # permission above and mints a short-lived credential itself.
+      # Provenance attestation is generated automatically under trusted
+      # publishing, so --provenance is not passed explicitly.
+      - run: npm publish --access public --tag ${{ steps.disttag.outputs.tag }}

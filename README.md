@@ -148,6 +148,12 @@ const psu = await connect({ host, udp: false });
 **This channel is monitor-only.** It cannot set a voltage, enable an output or
 read the error queue. All control goes over SCPI regardless.
 
+**There is no streaming mode** — it is strictly request/response. One datagram
+in, exactly one out; silence when you send nothing. It does not rate-limit, so
+poll as fast as you like: ten back-to-back requests get ten replies, and
+sustained poll-on-reply measures ~21 Hz on a typical LAN, which is round-trip
+time rather than a device limit. (The vendor's own applet polls at 2 Hz.)
+
 Documented nowhere by B&K — the frame layout was established by probing an
 XLN6024 on firmware 1.20. See `plans/xln-modernization.md`.
 
@@ -405,6 +411,19 @@ git push origin master --tags
 Prerelease versions publish to the `next` dist-tag automatically; plain versions
 go to `latest`. `prepublishOnly` refuses to run outside CI, so an accidental
 local publish fails rather than shipping.
+
+Publishing uses npm **trusted publishing** (OIDC) — there is no `NPM_TOKEN` and
+no secret anywhere in the repo. npm exchanges the workflow's short-lived OIDC
+token for publish credentials, which also means provenance is generated
+automatically.
+
+One-time setup on npmjs.com, under the package's _Settings → Trusted publisher_:
+select GitHub Actions, organization `cinderblock`, repository `XLN`, workflow
+filename **`release.yml`**. Leave the environment field blank unless you also
+add a matching `environment:` to the job — the two must agree.
+
+⚠️ Because the trust is bound to the workflow _filename_, renaming
+`release.yml` breaks publishing until the npm setting is updated to match.
 
 ## License
 

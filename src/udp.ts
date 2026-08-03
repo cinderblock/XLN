@@ -14,6 +14,13 @@
  * - It replies with a 96-byte, space-padded, fixed-width ASCII frame carrying
  *   the output state and the measured voltage and current.
  * - It is unicast only; broadcast gets nothing, so it is not discovery.
+ * - **Strictly request/response — there is no streaming mode.** Verified on
+ *   hardware: one datagram in produces exactly one datagram out, the device is
+ *   silent when nothing is sent, and ten back-to-back requests produce ten
+ *   replies with no rate limiting or coalescing. Sustained poll-on-reply
+ *   measured ~21 Hz, which is round-trip-time bound rather than a device
+ *   limit — requests can be pipelined to go faster. The vendor's own applet
+ *   simply polls at 2 Hz.
  *
  * Why it is worth using: one datagram returns state, volts and amps **taken at
  * the same instant**, where the SCPI path needs two or three round trips that
