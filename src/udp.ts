@@ -4,10 +4,13 @@
  * No B&K manual revision mentions this — it was found by probing an XLN6024 on
  * firmware 1.20. What it does:
  *
- * - You send a **fixed-size** datagram. The content is ignored entirely:
- *   `*IDN?`, an empty buffer and random bytes all produce the same reply. Only
- *   the length matters, and only some lengths work (6/16/32/48/64 and exactly
- *   96 are known good; 95, 97, 128 and 256 are silent).
+ * - The content is ignored entirely. `*IDN?`, an empty buffer and pure garbage
+ *   all produce the same reply, and garbage never reaches the SCPI parser —
+ *   verified by sending junk over UDP and finding `SYSTEM:ERROR?` still clean.
+ * - **Only the datagram length matters: it must be even and at most 96 bytes.**
+ *   0, 2, 4, 12, 64, 94 and 96 are accepted; 1, 3, 5, 11, 63, 95, 97, 98 and
+ *   128 are silent. That is an alignment check, not a grammar check — it looks
+ *   like a receiver copying into a 96-byte buffer in 16-bit words.
  * - It replies with a 96-byte, space-padded, fixed-width ASCII frame carrying
  *   the output state and the measured voltage and current.
  * - It is unicast only; broadcast gets nothing, so it is not discovery.
@@ -21,6 +24,16 @@
  *
  * What it cannot do: change anything. It is a monitor, not a control channel.
  * All control still goes over SCPI on TCP 5025.
+ *
+ * **Why this exists at all:** the XLN is a rebadged Motech DS-6024, and its web
+ * UI serves a Java applet, `Display.class`, which is Sun's 1995
+ * `QuoteClientApplet` tutorial sample with five edits — a 96-byte buffer,
+ * a `MEAS:CURR?` request prefilled into it, port 9221 hardcoded, a 500 ms poll
+ * timer, and a custom `paint()`. That applet is the only UDP client the vendor ships,
+ * it has no input path, and the web page's own Set/Output controls are plain
+ * HTML form fields over HTTP. So this port exists to feed a status readout, and
+ * the 96-byte size and ignored payload are both inherited from a tutorial echo
+ * server rather than designed.
  */
 
 import { createSocket, type Socket } from 'node:dgram';
@@ -33,9 +46,10 @@ export const XLN_UDP_PORT = 9221;
 /**
  * Size of the poll datagram.
  *
- * 96 matches both the reply size and what the 2015 library sent. Lengths in
- * the 65-95 range are not reliably accepted, so this is not made configurable
- * without good reason.
+ * Any even length up to 96 works, including zero — the content is discarded
+ * either way. 96 is used because that is what the vendor's own applet sends,
+ * which is the size most likely to be accepted by firmware revisions nobody
+ * has tested.
  */
 const POLL_SIZE = 96;
 
@@ -75,10 +89,11 @@ export interface UdpStatus {
 /**
  * Parse a status frame.
  *
- * Tokenizes on whitespace rather than reading fixed byte offsets: the sample
- * frame has its fields at offsets 16/35/45, but those will shift as values
- * gain digits (`9.999` vs `24.000`), and column positions are exactly the kind
- * of thing that differs between models and firmware revisions.
+ * Anchors on the `V` and `A` unit markers rather than on byte offsets. The
+ * vendor applet slices the frame at fixed columns, but the values inside are
+ * right-aligned, so a wider reading shifts where the digits start — and column
+ * positions are exactly the kind of thing that differs between models and
+ * firmware revisions anyway.
  */
 export function parseUdpStatus(frame: string, at = Date.now()): UdpStatus {
   const raw = frame.replace(/\0+$/, '');

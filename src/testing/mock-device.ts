@@ -207,8 +207,13 @@ export class MockDevice {
   /**
    * Build the 96-byte fixed-width status frame the real device sends.
    *
-   * Layout observed on an XLN6024 (fw 1.20): state at offset 16, measured
-   * volts at 35 followed by `V`, measured amps at 45 followed by `A`.
+   * The vendor's `Display.class` applet renders exactly two slices of this
+   * frame — `substring(0, 19)` and `substring(33, 52)` — and every byte outside
+   * them is space padding, so those are the only fields that exist.
+   *
+   * Values are right-aligned within their columns, which reproduces the frame
+   * captured from an XLN6024 (fw 1.20) byte for byte: state ending at 18,
+   * volts at 39 with `V` at 41, amps at 49 with `A` at 51.
    */
   statusFrame(): string {
     const state = this.output ? this.regulationMode : 'OFF';
@@ -221,10 +226,14 @@ export class MockDevice {
         if (char !== undefined) frame[at + i] = char;
       }
     };
-    put(state, 16);
-    put(volts, 35);
+    /** Right-align `text` so its last character lands on `end`. */
+    const putRight = (text: string, end: number): void => {
+      put(text, end - text.length + 1);
+    };
+    putRight(state, 18);
+    putRight(volts, 39);
     put('V', 41);
-    put(amps, 45);
+    putRight(amps, 49);
     put('A', 51);
     return frame.join('');
   }
