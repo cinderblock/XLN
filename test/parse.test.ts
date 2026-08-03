@@ -148,31 +148,45 @@ describe('parseRegulationMode', () => {
 });
 
 describe('parseStatus', () => {
-  it('decodes a decimal triplet', () => {
-    // 0b1000_0100 = OVP enabled, output on.
-    const status = parseStatus('132,0,0');
-    expect(status.enabled.overVoltage).toBe(true);
-    expect(status.enabled.output).toBe(true);
-    expect(status.enabled.overCurrent).toBe(false);
-    expect(status.bytes).toEqual([132, 0, 0]);
+  // Captured from an XLN6024 on firmware 1.20. The manual calls the enable
+  // byte "byte 0", but it arrives LAST — reading the string left to right
+  // decodes every flag as false.
+  it('decodes the output bit from real hardware', () => {
+    const off = parseStatus('000000');
+    expect(off.enabled.output).toBe(false);
+
+    const on = parseStatus('000004');
+    expect(on.enabled.output).toBe(true);
   });
 
-  it('decodes contiguous hex', () => {
-    const status = parseStatus('840000');
-    expect(status.enabled.overVoltage).toBe(true);
-    expect(status.enabled.output).toBe(true);
+  it('decodes the OVP and OCP enable bits from real hardware', () => {
+    expect(parseStatus('000080').enabled.overVoltage).toBe(true);
+    expect(parseStatus('000080').enabled.overCurrent).toBe(false);
+
+    expect(parseStatus('000040').enabled.overCurrent).toBe(true);
+    expect(parseStatus('000040').enabled.overVoltage).toBe(false);
   });
 
-  it('decodes latched fault flags from byte 1', () => {
+  it('decodes latched fault flags from the middle byte', () => {
     // 0b0000_0110 = AC low and over-temperature both latched.
-    const status = parseStatus('0,6,0');
+    const status = parseStatus('000600');
     expect(status.occurred.acLow).toBe(true);
     expect(status.occurred.overTemperature).toBe(true);
     expect(status.occurred.overVoltage).toBe(false);
+    // The enable byte is untouched.
+    expect(status.enabled.output).toBe(false);
   });
 
-  it('accepts space separation', () => {
-    expect(parseStatus('1 2 3').bytes).toEqual([1, 2, 3]);
+  it('reports bytes in manual order, not wire order', () => {
+    const status = parseStatus('000204');
+    expect(status.bytes).toEqual([0x04, 0x02, 0x00]);
+    expect(status.enabled.output).toBe(true);
+    expect(status.occurred.overTemperature).toBe(true);
+  });
+
+  it('accepts decimal and space-separated forms', () => {
+    expect(parseStatus('0,0,4').enabled.output).toBe(true);
+    expect(parseStatus('0 0 4').enabled.output).toBe(true);
   });
 
   it('rejects the wrong number of bytes', () => {

@@ -275,6 +275,7 @@ describe('error queue', () => {
 describe('system and status', () => {
   it('decodes the legacy STATUS? bitfield', async () => {
     const { device, psu } = await open();
+    // Manual numbering: [enable, occurred, reserved].
     device.statusBytes = [0b0000_0100, 0b0000_0010, 0];
     const status = await psu.getStatus();
     expect(status.enabled.output).toBe(true);

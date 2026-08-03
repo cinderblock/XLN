@@ -50,8 +50,11 @@ describe('parseUdpStatus', () => {
   });
 
   it('handles a value that has swallowed the space before its unit', () => {
-    // The observed frame writes the number at a fixed offset and the unit at
-    // another, so a six-character value runs straight into it.
+    // Defensive only. Real hardware right-aligns each value so it always ends
+    // two columns before its unit — `4.998` starts at 35 and `23.995` at 34,
+    // both ending at 39 with `V` at 41. So this collision does not occur on an
+    // XLN6024 (fw 1.20); the parser tolerates it in case another model or
+    // revision left-aligns instead.
     const merged =
       '                CC                 12.000V   2.000 A                 ';
     const status = parseUdpStatus(merged);

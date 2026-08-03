@@ -74,11 +74,11 @@ export interface UdpStatus {
   /**
    * Output state as reported by the frame.
    *
-   * Observed as `OFF` with the output disabled. With the output **enabled** it
-   * carries the regulation mode: B&K's own manual screenshots the Web Control
-   * page with this exact display panel reading `CV` above `35.996 V  0.000 A`
-   * — the same three fields in the same order. Not yet confirmed on this unit,
-   * so the type stays open.
+   * `OFF` while the output is disabled; the regulation mode while it is
+   * enabled. **Confirmed on hardware**: an XLN6024 (fw 1.20) at 5 V into no
+   * load reports `CV`, matching `OUTPUT:STATE?` over SCPI. `CC` is expected
+   * under a current-limited load but has not been observed, so the type stays
+   * open.
    */
   readonly state: RegulationMode | 'OFF';
   /** Whether the output is on, derived from {@link state}. */
@@ -108,9 +108,8 @@ export function parseUdpStatus(frame: string, at = Date.now()): UdpStatus {
   const raw = frame.replace(/\0+$/, '');
 
   // Anchor on the unit markers rather than on whitespace or byte offsets.
-  // Offsets shift as values gain digits, and the separating space disappears
-  // entirely once a value is wide enough — the observed `0.000 V` becomes
-  // `12.000V` — so neither column position nor token splitting is safe.
+  // Values are right-aligned, so where the digits *start* moves as they widen:
+  // measured on an XLN6024, `4.998` begins at column 35 and `23.995` at 34.
   const read = (unit: 'V' | 'A'): number | undefined => {
     const match = new RegExp(`([-+]?\\d*\\.?\\d+)\\s*${unit}(?![A-Za-z])`).exec(
       raw,

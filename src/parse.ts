@@ -196,6 +196,12 @@ export function parseRegulationMode(
  *
  * This is the only way to read over-temperature and AC-low faults; they have
  * no SCPI query. Bit assignments are from the manual's `STATUS?` section.
+ *
+ * **The wire order is the reverse of the manual's numbering.** The manual calls
+ * the enable-flags byte "byte 0", but it arrives **last**. Measured on an
+ * XLN6024 (fw 1.20): output on gives `000004` (bit 2), OVP on gives `000080`
+ * (bit 7), OCP on gives `000040` (bit 6) — all in the final byte, and all
+ * matching the manual's byte-0 assignments.
  */
 export interface XLNStatus {
   /** Byte 0 — which protections are currently *enabled*. */
@@ -219,7 +225,11 @@ export interface XLNStatus {
     readonly acLow: boolean;
     readonly overTemperature: boolean;
   };
-  /** The three raw bytes, in case a bit is needed that isn't decoded above. */
+  /**
+   * The three bytes in the **manual's** numbering — `[byte0, byte1, byte2]`,
+   * i.e. `[enable flags, occurred flags, reserved]`. Note this is the reverse
+   * of the order they arrive in on the wire.
+   */
   readonly bytes: readonly [number, number, number];
 }
 
@@ -228,9 +238,13 @@ const bit = (byte: number, n: number): boolean => (byte & (1 << n)) !== 0;
 /**
  * Parse a legacy `STATUS?` response into decoded flags.
  *
- * The manual says only "the system will return three (3) bytes" without
- * stating the encoding, so decimal triplets (`160,0,0`), space-separated
- * values, and contiguous hex (`A00000`) are all accepted.
+ * Real hardware sends six contiguous hex characters (`000004`). The manual says
+ * only "the system will return three (3) bytes" without stating the encoding,
+ * so decimal triplets and space-separated values are accepted too.
+ *
+ * Treated as a 24-bit big-endian value: the manual's byte 0 is the **low**
+ * byte, which is the opposite of reading the string left to right. See
+ * {@link XLNStatus}.
  */
 export function parseStatus(response: string, command = 'STATUS?'): XLNStatus {
   const text = response.trim();
@@ -262,28 +276,34 @@ export function parseStatus(response: string, command = 'STATUS?'): XLNStatus {
     );
   }
 
-  const [b0 = 0, b1 = 0, b2 = 0] = bytes;
+  // Wire order is most-significant first, and the manual's "byte 0" is the
+  // least-significant one — so the enable flags are the LAST byte on the wire.
+  const [wire0 = 0, wire1 = 0, wire2 = 0] = bytes;
+  const enabled = wire2;
+  const occurred = wire1;
+  const reserved = wire0;
+
   return {
     enabled: {
-      overVoltage: bit(b0, 7),
-      overCurrent: bit(b0, 6),
-      overPower: bit(b0, 5),
-      ccToCv: bit(b0, 4),
-      cvToCc: bit(b0, 3),
-      output: bit(b0, 2),
-      backlight: bit(b0, 1),
-      aux5V: bit(b0, 0),
+      overVoltage: bit(enabled, 7),
+      overCurrent: bit(enabled, 6),
+      overPower: bit(enabled, 5),
+      ccToCv: bit(enabled, 4),
+      cvToCc: bit(enabled, 3),
+      output: bit(enabled, 2),
+      backlight: bit(enabled, 1),
+      aux5V: bit(enabled, 0),
     },
     occurred: {
-      overVoltage: bit(b1, 7),
-      overCurrent: bit(b1, 6),
-      overPower: bit(b1, 5),
-      ccToCv: bit(b1, 4),
-      cvToCc: bit(b1, 3),
-      acLow: bit(b1, 2),
-      overTemperature: bit(b1, 1),
+      overVoltage: bit(occurred, 7),
+      overCurrent: bit(occurred, 6),
+      overPower: bit(occurred, 5),
+      ccToCv: bit(occurred, 4),
+      cvToCc: bit(occurred, 3),
+      acLow: bit(occurred, 2),
+      overTemperature: bit(occurred, 1),
     },
-    bytes: [b0, b1, b2],
+    bytes: [enabled, occurred, reserved],
   };
 }
 

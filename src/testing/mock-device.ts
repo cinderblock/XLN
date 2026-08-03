@@ -119,6 +119,10 @@ export class MockDevice {
     voltage: 0,
     current: 0,
   }));
+  /**
+   * `STATUS?` bytes in the **manual's** numbering: `[enable, occurred,
+   * reserved]`. Emitted reversed on the wire, as real hardware does.
+   */
   statusBytes: [number, number, number] = [0, 0, 0];
   errors: number[] = [];
 
@@ -473,7 +477,12 @@ export class MockDevice {
       case 'MEMORY:ISET?':
         return this.slot().current.toFixed(3);
       case 'STATUS?':
-        return this.statusBytes.join(',');
+        // Real hardware sends six contiguous hex characters, most
+        // significant first — which puts the manual's "byte 0" last.
+        return [...this.statusBytes]
+          .reverse()
+          .map((b) => b.toString(16).padStart(2, '0'))
+          .join('');
       default:
         return undefined;
     }

@@ -1,5 +1,25 @@
 # Changelog
 
+## 1.0.0-alpha.2
+
+### Fixed
+
+- **`getStatus()` decoded the wrong byte and reported every flag as `false`.**
+  The manual calls the enable-flags byte "byte 0", but it arrives **last** on
+  the wire. Measured on an XLN6024 (fw 1.20): enabling the output gives
+  `000004`, OVP gives `000080`, OCP gives `000040` — all in the final byte, all
+  matching the manual's byte-0 bit assignments. The response is now decoded as a
+  24-bit big-endian value with byte 0 as the low byte.
+
+### Confirmed against hardware
+
+- `OUTPUT:STATE?` returns **`CV`** with the output enabled, matching the UDP
+  frame's state field. Both are now verified rather than inferred.
+- UDP frame values are **right-aligned**, so a wider reading shifts where its
+  digits start (`4.998` at column 35, `23.995` at 34) but always ends two
+  columns before its unit. The parser anchors on the unit markers and is
+  unaffected either way.
+
 ## 1.0.0-alpha.1
 
 Complete rewrite in TypeScript. The API is promise-based and breaking; see

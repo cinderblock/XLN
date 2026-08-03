@@ -1,6 +1,6 @@
 {
   "name": "xln",
-  "version": "1.0.0-alpha.1",
+  "version": "1.0.0-alpha.2",
   "description": "Remote control library for B&K Precision XLN series programmable DC power supplies (SCPI over TCP)",
   "type": "module",
   "exports": {
@@ -53,7 +53,8 @@
     "prepublishOnly": "tsx scripts/guard-publish.ts && npm run build",
     "discover": "tsx scripts/discover.ts",
     "probe:udp": "tsx scripts/probe-udp.ts",
-    "probe:udp:format": "tsx scripts/probe-udp-format.ts"
+    "probe:udp:format": "tsx scripts/probe-udp-format.ts",
+    "probe:output": "tsx scripts/probe-output-on.ts"
   },
   "repository": {
     "type": "git",

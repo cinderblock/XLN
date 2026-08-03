@@ -602,6 +602,42 @@ manual scopes Java to "display"; the applet has no input path; the vendor's
 control software needs no UDP; and junk payloads never reach the SCPI parser).
 The library only ever reads from this channel anyway.
 
+### Output-on probe (2026-08-03) — closed the last protocol question, found a bug
+
+Cameron confirmed nothing was connected, so the output could be enabled safely.
+`scripts/probe-output-on.ts` saves setpoints, drives 5 V and 24 V into no load,
+and restores everything in a `finally`.
+
+Confirmed:
+
+- **`OUTPUT:STATE?` returns `CV`** with the output on, and the UDP frame's state
+  field agrees. Previously only inferred from a manual screenshot.
+- **UDP frame values are right-aligned.** `4.998` starts at column 35, `23.995`
+  at 34, both ending at 39 with `V` at 41 — so a value never collides with its
+  unit on this firmware. The parser anchors on unit markers, so it was already
+  correct; the defensive "merged" test case is retained but no longer claims to
+  represent real hardware. The state field is right-aligned too: `OFF` at 16-18,
+  `CV` at 17-18.
+- **`CC` is still unobserved** — it needs a current-limited load.
+
+**Bug found: `getStatus()` decoded the wrong byte.** The manual numbers the
+enable-flags byte as "byte 0", but it is transmitted **last**. Verified by
+toggling known bits:
+
+| Change    | `STATUS?` | Bit | Manual byte 0 |
+| --------- | --------- | --- | ------------- |
+| Output on | `000004`  | 2   | output        |
+| OVP on    | `000080`  | 7   | OVP           |
+| OCP on    | `000040`  | 6   | OCP           |
+
+Reading the string left to right made every flag `false`. Now decoded as a
+24-bit big-endian value with the manual's byte 0 as the low byte, and confirmed
+on hardware: `enabled.output` tracks the real output state.
+
+Note the other byte-0 bits stay **unverified** — the backlight bit reads 0 while
+the backlight is visibly on, so either that assignment differs or the bit means
+something other than the obvious. Only the output/OVP/OCP bits are proven.
+
 ## Findings / gotchas discovered during implementation
 
 - **TypeScript 7.0.2 is `latest` but unusable here.** `typescript-eslint` 8.65 caps
