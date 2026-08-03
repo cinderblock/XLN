@@ -1,3 +1,6 @@
+// Plain JS on purpose. A .ts config would need `jiti` installed, which was an
+// implicit dependency that happened to work locally under Bun and failed in CI
+// under Node. See tsdown.config.mjs for the same reasoning.
 import { defineConfig, globalIgnores } from 'eslint/config';
 import eslint from '@eslint/js';
 import tseslint from 'typescript-eslint';
@@ -24,6 +27,12 @@ export default defineConfig(
         { allowNumber: true },
       ],
     },
+  },
+  {
+    // Config files are not part of the tsconfig project, so type-aware rules
+    // cannot resolve them. Lint them syntactically only.
+    files: ['*.config.mjs'],
+    extends: [tseslint.configs.disableTypeChecked],
   },
   {
     // Scripts and tests talk to sockets and print to the console.

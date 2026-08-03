@@ -1,3 +1,7 @@
+// Plain JS on purpose. tsdown loads a .ts config via `unrun`, which declares
+// `engines: node ^22.13.0 || >=24` — so a TypeScript config file could never
+// build on the Node 20.19 floor this package supports. It worked locally only
+// because Bun loads TS configs natively and never needed the loader at all.
 import { defineConfig } from 'tsdown';
 
 export default defineConfig({

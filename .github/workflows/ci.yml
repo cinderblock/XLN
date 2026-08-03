@@ -10,8 +10,44 @@ permissions:
   contents: read
 
 jobs:
+  # Build tooling and the library have different Node requirements, and
+  # conflating them was a mistake: tsdown declares `node ^22.18 || >=24.11`, so
+  # running the build on the 20.19 engines floor could never work. Build and
+  # lint once on current Node; prove the *library* across the range separately.
+  build:
+    name: Build and lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+
+      - run: bun install --frozen-lockfile
+      - run: bun run build
+
+      - run: bun run format:check
+      - run: bun run lint
+      - run: bun run typecheck
+
+      # publint checks the exports map; attw checks that types resolve under
+      # every module mode, not just the one we happen to develop in.
+      - run: bun run check:package
+
+      # Hand dist/ to the test matrix so the published-artifact tests can run
+      # on the oldest supported Node, which is where CJS/ESM interop breaks.
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+          retention-days: 1
+
   test:
     name: Node ${{ matrix.node }} on ${{ matrix.os }}
+    needs: build
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -31,39 +67,19 @@ jobs:
       - uses: actions/checkout@v7
 
       # Dependencies are installed with Bun, but the suite runs on Node — the
-      # library targets Node and the matrix is what proves the engines range.
+      # library targets Node and this matrix is what proves the engines range.
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: latest
-
       - uses: actions/setup-node@v7
         with:
           node-version: ${{ matrix.node }}
 
       - run: bun install --frozen-lockfile
 
-      # Build first: some tests load dist/ through both ESM and CommonJS to
-      # catch a broken exports map before it reaches the registry.
-      - run: bun run build
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
 
-      - run: bun run format:check
-      - run: bun run lint
-      - run: bun run typecheck
       - run: bun run test
-
-  package:
-    name: Package
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-      - uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: latest
-      - uses: actions/setup-node@v7
-        with:
-          node-version: '24'
-      - run: bun install --frozen-lockfile
-      - run: bun run build
-      # publint checks the exports map; attw checks that types resolve under
-      # every module mode, not just the one we happen to develop in.
-      - run: bun run check:package

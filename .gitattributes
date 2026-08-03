@@ -1,0 +1,10 @@
+# Normalize every text file to LF in the repository AND in working trees.
+#
+# Without this, a checkout on Windows gets CRLF (core.autocrlf=true is the
+# default there), and `prettier --check` then fails on every file — which is
+# exactly what happened on the windows-latest CI leg while passing locally,
+# because a local working tree that prettier has already written is LF.
+* text=auto eol=lf
+
+# Lockfiles and generated output: leave alone.
+bun.lock -diff linguist-generated
